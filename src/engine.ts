@@ -59,6 +59,7 @@ import {
   newBiography,
 } from "./biography";
 import { avatarLook, drawAvatar, drawEventItem, drawPerson, drawPet, drawRoom, drawStation, type AvatarFacing } from "./sprites";
+import { warmStorybookCharacterAtlases } from "./storybook-characters";
 import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
@@ -1668,10 +1669,24 @@ export class Game {
     }
   }
 
-  private continueSavedGame(): void {
+  private async continueSavedGame(button?: HTMLButtonElement): Promise<void> {
     const save = this.readSavedGame();
     if (!save) return this.showTitle();
+    const heritage = this.normalizeHeritage(save.snapshot.heritage);
+    save.snapshot.heritage = heritage;
+    save.snapshot.gender =
+      save.snapshot.gender === "female" ? "female" : "male";
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.textContent = "Loading your character…";
+    }
     try {
+      // Saved lives may use an atlas that has not been requested on the title
+      // screen. Decode the whole heritage pair before gameplay so neither the
+      // player nor opposite-gender family briefly flashes the old fallback.
+      await warmStorybookCharacterAtlases(heritage);
+      if (button && !button.isConnected) return;
       const stageIndex = save.snapshot.stageIndex;
       const chapterEntry = save.timeline[stageIndex];
       this.playerName = typeof save.playerName === "string" ? save.playerName.slice(0, 40) : "";
@@ -1691,6 +1706,11 @@ export class Game {
       this.recordFunnel("invalid_save_removed");
       this.showTitle();
       this.hint("The previous save was damaged, so it was safely removed.");
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
     }
   }
 
@@ -5402,8 +5422,17 @@ export class Game {
         <p class="plj-foot">Move first. The game introduces everything else when you need it.</p>
       </div>`;
     this.ui.overlay.classList.add("show");
-    this.ui.overlay.querySelector<HTMLButtonElement>("#plj-start")!.onclick = () => this.showSetup();
-    this.ui.overlay.querySelector<HTMLButtonElement>("#plj-continue")?.addEventListener("click", () => this.continueSavedGame());
+    this.ui.overlay.querySelector<HTMLButtonElement>("#plj-start")!.onclick = async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.textContent = "Loading characters…";
+      await warmStorybookCharacterAtlases(this.heritage);
+      if (this.mode === "title" && button.isConnected) this.showSetup();
+    };
+    this.ui.overlay.querySelector<HTMLButtonElement>("#plj-continue")?.addEventListener("click", (event) => {
+      void this.continueSavedGame(event.currentTarget as HTMLButtonElement);
+    });
     this.ui.overlay.querySelector<HTMLButtonElement>("#plj-bio-write")!.onclick = () => {
       this.editBio = newBiography(this.uid(), "male");
       this.showBioAuthor();
@@ -5472,20 +5501,29 @@ export class Game {
         this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-heritage").forEach((b) => b.classList.remove("is-selected"));
         btn.classList.add("is-selected");
         this.heritage = this.normalizeHeritage(btn.dataset.heritage);
-        this.refreshSetupGenderPreviews(this.heritage);
+        void this.prepareSetupCharacterPair(this.heritage);
       };
     });
     this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender").forEach((btn) => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         this.playerName = (this.ui.overlay.querySelector<HTMLInputElement>("#plj-setup-name")?.value ?? "").slice(0, 40);
         this.gender = btn.dataset.g === "female" ? "female" : "male";
         this.heritage = this.normalizeHeritage(this.ui.overlay.querySelector<HTMLButtonElement>(".plj-heritage.is-selected")?.dataset.heritage);
+        const selectedHeritage = this.heritage;
         const startIndex = this.normalizeStageIndex(Number(this.ui.overlay.querySelector<HTMLSelectElement>("#plj-start-stage")?.value ?? 0));
         this.setLifeSpeedIndex(Number(speedInput.value));
         this.setupFamilyFund = backgroundMoney(this.economicBackground);
+        const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
+        genderButtons.forEach((choice) => {
+          choice.disabled = true;
+          choice.setAttribute("aria-busy", "true");
+        });
+        await warmStorybookCharacterAtlases(selectedHeritage);
+        if (this.mode !== "setup" || this.heritage !== selectedHeritage) return;
         this.newGame(false, startIndex, this.setupFamilyFund);
       };
     });
+    void this.prepareSetupCharacterPair(this.heritage);
   }
 
   private setupGenderButton(gender: Gender, heritage: HeritageStyle): string {
@@ -5515,10 +5553,38 @@ export class Game {
     });
   }
 
+  /**
+   * Load both explicitly gendered sheets for the selected heritage, then
+   * rebuild the setup thumbnails from the same raster frames used in-game.
+   * The selection can change while decoding, so only the newest choice is
+   * allowed to update or unlock the controls.
+   */
+  private async prepareSetupCharacterPair(heritage: HeritageStyle): Promise<void> {
+    const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
+    genderButtons.forEach((button) => {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.title = "Loading character art…";
+      const avatar = button.querySelector<HTMLElement>(".plj-setup-avatar-img");
+      if (avatar) avatar.style.opacity = "0.32";
+    });
+    await warmStorybookCharacterAtlases(heritage);
+    if (this.mode !== "setup" || this.heritage !== heritage) return;
+    this.refreshSetupGenderPreviews(heritage);
+    genderButtons.forEach((button) => {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.removeAttribute("title");
+    });
+  }
+
   // --- biography mode -------------------------------------------------------
 
   /** Start replaying an authored (or recorded) life. */
-  private startBiographyPlay(bio: Biography): void {
+  private async startBiographyPlay(bio: Biography): Promise<void> {
+    const sourceMode = this.mode;
+    await warmStorybookCharacterAtlases("western");
+    if (this.mode !== sourceMode) return;
     this.biography = bio;
     this.gender = bio.gender;
     this.heritage = "western";
@@ -5555,7 +5621,16 @@ export class Game {
     this.ui.overlay.classList.add("show");
     const ov = this.ui.overlay;
     ov.querySelectorAll<HTMLButtonElement>(".plj-bio-play2").forEach((b) => {
-      b.onclick = () => { const bio = getBio(b.dataset.id!); if (bio) this.startBiographyPlay(bio); };
+      b.onclick = async () => {
+        const bio = getBio(b.dataset.id!);
+        if (!bio) return;
+        b.disabled = true;
+        b.setAttribute("aria-busy", "true");
+        b.textContent = "Loading character…";
+        await warmStorybookCharacterAtlases("western");
+        if (this.mode !== "biolist" || !b.isConnected) return;
+        await this.startBiographyPlay(bio);
+      };
     });
     ov.querySelectorAll<HTMLButtonElement>(".plj-bio-edit").forEach((b) => {
       b.onclick = () => { const bio = getBio(b.dataset.id!); if (bio) { this.editBio = bio; this.showBioAuthor(); } };
@@ -5657,9 +5732,13 @@ export class Game {
       };
     });
     ov.querySelector<HTMLButtonElement>("#plj-bio-back")!.onclick = () => { this.persistDraft(); this.showBioList(); };
-    ov.querySelector<HTMLButtonElement>("#plj-bio-play")!.onclick = () => {
+    ov.querySelector<HTMLButtonElement>("#plj-bio-play")!.onclick = async (event) => {
       this.persistDraft();
-      this.startBiographyPlay(this.editBio!);
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      button.textContent = "Loading character…";
+      await this.startBiographyPlay(this.editBio!);
     };
   }
 

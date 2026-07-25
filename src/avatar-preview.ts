@@ -214,7 +214,7 @@ function renderMatrix(): void {
     { stage: 7, gender: "female", facing: "front", moving: false, label: "adult woman" },
     { stage: 7, gender: "male", facing: "right", moving: true, label: "adult walk" },
     { stage: 10, gender: "female", facing: "back", moving: false, label: "elder back" },
-    { stage: 11, gender: "male", facing: "front", moving: false, pose: "sit", label: "elder seated" },
+    { stage: 11, gender: "male", facing: "front", moving: false, label: "elder front" },
   ];
 
   heritages.forEach((heritage, row) => {
@@ -264,3 +264,4 @@ function render(): void {
 }
 
 render();
+window.addEventListener("plj:character-atlas-ready", render);

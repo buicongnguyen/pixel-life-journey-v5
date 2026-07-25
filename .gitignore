@@ -14,3 +14,7 @@ dist-ssr
 logs
 *.log
 npm-debug.log*
+
+# Python tooling cache
+__pycache__/
+*.py[cod]

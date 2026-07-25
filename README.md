@@ -130,8 +130,9 @@ option's effects, and the sources.
 
 The v5 character redesign is documented in
 [`V5-CHARACTER-STYLE.md`](V5-CHARACTER-STYLE.md). During development,
-`avatar-preview.html?matrix` renders the age, pose, facing and heritage review
-matrix used to validate the procedural character system.
+`avatar-preview.html?matrix` renders the age, facing, gender and heritage
+review matrix used to validate the generated atlas system and its Canvas
+fallback.
 
 ## 📖 Biography mode
 
@@ -156,9 +157,10 @@ the game does not transmit personal information.
 
 - **Vite + TypeScript** and a hand-rolled **HTML5 Canvas** renderer — no game engine.
 - Zero runtime dependencies; everything runs in the browser, nothing is stored or sent.
-- Characters use an original deterministic **cozy-chibi Canvas renderer** with
-  compact silhouettes, expressive faces, four-way movement and age-specific
-  geometry, on a supersampled canvas for crisp high-resolution art.
+- Characters use original **cozy storybook-chibi raster atlases**, separated by
+  gender and heritage, with five coherent age bands and dedicated front, side
+  and back views. A deterministic Canvas renderer remains as a safe loading and
+  error fallback.
 
 ## 💻 Develop
 
@@ -187,6 +189,8 @@ src/
 ├── stats.ts       # the meters (incl. weight) + research-grounded balance math
 ├── story.ts       # the life-story writer (pre-written comment bank)
 ├── cute-characters.ts # original v5 character geometry and rendering
+├── storybook-characters.ts # generated atlas loading, age/facing selection and motion
+├── assets/characters/ # gender-separated, heritage-separated directional atlases
 ├── sprites.ts     # rooms, stations, props, and character look palettes
 ├── ui.ts          # DOM: HUD, focus panel, touch controls, overlay
 ├── types.ts       # shared types

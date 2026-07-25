@@ -27,9 +27,8 @@ five required corrections:
 2. Isolate v5 saves, sound settings and playtest exports from v4 because every
    GitHub Pages project under `buicongnguyen.github.io` shares one localStorage
    origin.
-3. Build an original procedural character system; a copied sprite atlas cannot
-   cover twelve life stages, four facings, walk, sit and crawl poses, four
-   heritage palettes and every NPC kind.
+3. Build an original character system; a copied sprite atlas cannot safely
+   cover twelve life stages, four facings, poses, heritages and NPC kinds.
 4. Require a representative prototype art gate before completing the renderer.
 5. Add renderer, responsive and gameplay checks because the inherited tests cover
    rules and content, not visual output.
@@ -74,7 +73,9 @@ without copying distinctive assets or introducing clipping.
 ### Phase 3 — Complete character renderer
 
 - Roll the approved geometry through all twelve life stages.
-- Preserve both genders, four heritage palettes, outfit styles and NPC roles.
+- Preserve both genders and four heritage selections. Retain outfit and NPC-role
+  metadata so dedicated raster variants can be added without changing game
+  state.
 - Complete front/left/right/back, walk, sit, crawl, hair, skirt, cane, shadow and
   label alignment.
 - Keep the existing public rendering API and foot anchor stable.
@@ -120,7 +121,8 @@ Gate: GitHub Pages reports workflow mode and HTTPS, the live HTML/assets return
   restrained blush.
 - Limbs are short and soft; joints never read as mechanical balls or bands.
 - Front, profile and back silhouettes belong to the same character.
-- Movement has a readable four-beat step, body bounce and opposite arm swing.
+- Movement holds the correct directional silhouette and adds restrained body
+  bounce/lean. A four-beat limb cycle requires a later animation-sheet pass.
 - Heritage changes palette, hair texture and clothing—not facial worth or
   exaggerated anatomy.
 - No runtime sprite or source asset is copied from the reference repository.
@@ -133,3 +135,33 @@ Gate: GitHub Pages reports workflow mode and HTTPS, the live HTML/assets return
 - Pages deploy SHA equals local `HEAD`.
 - Live game and character preview load under the v5 project path.
 - V4 HEAD and working-tree status match the recorded boundary.
+
+## Post-release art correction
+
+The first published v5 build passed its code gates but failed the visual gate:
+the attractive generated sheet lived only in documentation while the live game
+still called the procedural Canvas renderer. A single mixed cast sheet also
+could not safely become a life-cycle atlas because it would change gender and
+heritage while the player aged.
+
+The reviewed correction therefore adds these gated phases:
+
+1. Generate eight coherent atlas families: Western, Asian, Middle Eastern and
+   Black/African diaspora, with male and female kept in separate files.
+2. Give every family five age identities (baby, child, teen, adult, elder) and
+   four dedicated directions (front, left side, back, right side).
+3. Remove chroma by border-connected flood fill, find real inter-cell gaps,
+   normalize every frame to a fixed transparent 256 px cell, mirror the rare
+   duplicated profile into a true opposite view, and record reviewed foot
+   anchors for asymmetric props.
+4. Make the raster renderer primary for idle and movement. Await the selected
+   gender pair before starting/resuming; retain the Canvas renderer for loading
+   failure and for seated poses that have no generated source row.
+5. Verify all 12 stages × 2 genders × 4 heritages × 4 facings, all eight PNG
+   dimensions and 160 populated cells, plus setup previews, NPC rendering,
+   movement, responsive layouts, production build and live GitHub Pages assets.
+6. Commit and push only after an independent diff review and live-browser check.
+
+Correction gate: no male/female atlas crossover, no front/back/profile
+substitution, no clipped hair/shoes/accessories, no chroma holes or fringe, and
+no art-style pop while walking.

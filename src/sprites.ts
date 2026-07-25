@@ -1,5 +1,9 @@
 import type { Gender, HeritageStyle, HouseTier, PersonKind, PetKind, RoomTheme, SceneKind, UpperSceneKind, VehicleTier } from "./types";
 import { drawCuteCharacter } from "./cute-characters";
+import {
+  drawStorybookCharacter,
+  storybookVisualHeight,
+} from "./storybook-characters";
 
 // ---------------------------------------------------------------------------
 // All drawing. The canvas is supersampled (see ui.ts) and rendered smoothly, so
@@ -947,7 +951,10 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
 // ===========================================================================
 
 export function drawCharacter(ctx: CanvasRenderingContext2D, cx: number, footY: number, look: AvatarLook, walkPhase: number, motionInput: AvatarMotion | boolean): void {
-  drawCuteCharacter(ctx, cx, footY, look, walkPhase, motionInput);
+  const motion = motionFrom(motionInput);
+  if (!drawStorybookCharacter(ctx, cx, footY, look, walkPhase, motion)) {
+    drawCuteCharacter(ctx, cx, footY, look, walkPhase, motion);
+  }
 }
 
 /** Kept as an unexported rollback reference while v5's renderer is reviewed.
@@ -2872,7 +2879,10 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
     ctx.ellipse(cx, footY + 1, look.heightPx * 0.32, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  const labelY = Math.max(14, footY - look.heightPx * (seated ? 0.72 : 1) - 10);
+  const labelY = Math.max(
+    14,
+    footY - (seated ? look.heightPx * 0.72 : storybookVisualHeight(look)) - 10
+  );
   drawNamePlate(ctx, cx, labelY, name, focused ? "#ffe9a8" : "rgba(255,255,255,0.9)");
   if (used) {
     ctx.fillStyle = "#3ddc84";
