@@ -1,0 +1,21 @@
+{
+  "name": "pixel-life-journey-v5",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pixel Life Journey v5 — a cozy life simulation with original cute chibi characters, meaningful choices, and a complete-life journey.",
+  "scripts": {
+    "dev": "vite",
+    "generate:training": "node scripts/generate-training-questions.mjs",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.4",
+    "vite": "^7.0.0"
+  }
+}
