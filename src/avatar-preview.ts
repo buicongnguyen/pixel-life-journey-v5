@@ -1,6 +1,6 @@
 import { avatarLook, drawCharacter, personLook } from "./sprites";
 import type { AvatarFacing } from "./sprites";
-import type { Gender, PersonKind } from "./types";
+import type { Gender, HeritageStyle, PersonKind } from "./types";
 
 const maybeCanvas = document.getElementById("preview");
 if (!(maybeCanvas instanceof HTMLCanvasElement)) {
@@ -191,7 +191,53 @@ function renderZoom(): void {
   });
 }
 
+function renderMatrix(): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawHeader();
+  const heritages: { id: HeritageStyle; label: string }[] = [
+    { id: "western", label: "Western" },
+    { id: "asian", label: "Asian" },
+    { id: "middleEastern", label: "Middle Eastern" },
+    { id: "black", label: "Black / African diaspora" },
+  ];
+  const cases: {
+    stage: number;
+    gender: Gender;
+    facing: AvatarFacing;
+    moving: boolean;
+    pose?: "stand" | "sit";
+    label: string;
+  }[] = [
+    { stage: 0, gender: "female", facing: "right", moving: true, label: "baby crawl" },
+    { stage: 3, gender: "male", facing: "left", moving: true, label: "child left" },
+    { stage: 7, gender: "female", facing: "front", moving: false, label: "adult woman" },
+    { stage: 7, gender: "male", facing: "right", moving: true, label: "adult walk" },
+    { stage: 10, gender: "female", facing: "back", moving: false, label: "elder back" },
+    { stage: 11, gender: "male", facing: "front", moving: false, pose: "sit", label: "elder seated" },
+  ];
+
+  heritages.forEach((heritage, row) => {
+    const footY = 255 + row * 225;
+    lane(footY, heritage.label);
+    cases.forEach((entry, column) => {
+      const x = 130 + column * 265;
+      drawCharacter(ctx, x, footY, avatarLook(entry.stage, entry.gender, heritage.id), column * 0.85, {
+        moving: entry.moving,
+        facing: entry.facing,
+        verticalBias: 0,
+        pose: entry.pose,
+      });
+      label(entry.label, x, footY + 42);
+    });
+  });
+}
+
 function render(): void {
+  if (location.search.includes("matrix")) {
+    renderMatrix();
+    return;
+  }
   if (location.search.includes("face")) {
     renderFaces();
     return;

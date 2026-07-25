@@ -128,6 +128,11 @@ the same habits that help in real life:
 See [`DESIGN.md`](DESIGN.md) for the full balance model, the life-stage graph, every
 option's effects, and the sources.
 
+The v5 character redesign is documented in
+[`V5-CHARACTER-STYLE.md`](V5-CHARACTER-STYLE.md). During development,
+`avatar-preview.html?matrix` renders the age, pose, facing and heritage review
+matrix used to validate the procedural character system.
+
 ## 📖 Biography mode
 
 The game is also a little tool for telling **real** life stories. From the title screen:
@@ -151,15 +156,16 @@ the game does not transmit personal information.
 
 - **Vite + TypeScript** and a hand-rolled **HTML5 Canvas** renderer — no game engine.
 - Zero runtime dependencies; everything runs in the browser, nothing is stored or sent.
-- Characters are drawn with smooth curves + gradients and **age-correct proportions**
-  (a newborn is a big-headed baby; the body matures gradually into an adult, then an
-  elder), on a **supersampled 2560×1440 canvas** (≈16× pixels) for crisp, high-res art.
+- Characters use an original deterministic **cozy-chibi Canvas renderer** with
+  compact silhouettes, expressive faces, four-way movement and age-specific
+  geometry, on a supersampled canvas for crisp high-resolution art.
 
 ## 💻 Develop
 
 ```bash
 npm install
 npm run dev      # start the dev server
+npm test         # rules, content, and full character-renderer matrix
 npm run build    # type-check + production build into dist/
 npm run preview  # preview the production build
 ```
@@ -180,7 +186,8 @@ src/
 ├── events.ts      # random "Easter egg" events (wallet, lottery, inheritance…)
 ├── stats.ts       # the meters (incl. weight) + research-grounded balance math
 ├── story.ts       # the life-story writer (pre-written comment bank)
-├── sprites.ts     # pixel-art drawing (rooms, the growing character, stations)
+├── cute-characters.ts # original v5 character geometry and rendering
+├── sprites.ts     # rooms, stations, props, and character look palettes
 ├── ui.ts          # DOM: HUD, focus panel, touch controls, overlay
 ├── types.ts       # shared types
 └── style.css      # retro UI styling

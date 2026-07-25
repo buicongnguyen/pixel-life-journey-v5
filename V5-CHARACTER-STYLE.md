@@ -1,10 +1,16 @@
 # V5 character style guide
 
+![Original v5 character target](docs/v5-character-target.png)
+
 ## Goal
 
 Make the people feel warm, playful and immediately readable at gameplay size.
 The target is an original cozy chibi language, not a replica of another game's
 sprites.
+
+The target sheet was generated specifically for this project as a design
+reference. Runtime characters remain deterministic Canvas drawings so every life
+stage, facing and pose stays consistent.
 
 ## Shape language
 

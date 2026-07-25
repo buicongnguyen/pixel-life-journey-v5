@@ -114,7 +114,7 @@ Gate: GitHub Pages reports workflow mode and HTTPS, the live HTML/assets return
 
 ## Character acceptance rubric
 
-- Adult head-to-height ratio targets roughly 0.28–0.31 (about 3.2–3.6 heads).
+- Adult head-to-height ratio targets roughly 0.30–0.33 (about 3.0–3.3 heads).
 - Children and babies are progressively rounder without becoming caricatures.
 - The face reads at 1×: two clear eyes, small nose, visible friendly mouth and
   restrained blush.

@@ -1,4 +1,5 @@
 import type { Gender, HeritageStyle, HouseTier, PersonKind, PetKind, RoomTheme, SceneKind, UpperSceneKind, VehicleTier } from "./types";
+import { drawCuteCharacter } from "./cute-characters";
 
 // ---------------------------------------------------------------------------
 // All drawing. The canvas is supersampled (see ui.ts) and rendered smoothly, so
@@ -723,22 +724,23 @@ interface BodyProfile {
   elder: boolean;
 }
 
-// "Life is a Game"-style realistic proportions: ~5.5-head adults with normal
-// bodies and small clean faces; kids are stockier with bigger heads; the
-// newborn is a special tiny baby. Proportions mature gradually with age.
+// V5's compact chibi scale. The overall height stays modest in the 640×1000
+// room while the head grows to roughly a third of stature on adults. Children
+// and babies are progressively rounder, and elders settle back into a softer,
+// slightly larger-head silhouette.
 const STAGE_PROFILES: BodyProfile[] = [
-  { heightPx: 86, headRatio: 0.46, chub: 1.0, baby: true, child: true, elder: false }, // newborn (~2.2 heads)
-  { heightPx: 96, headRatio: 0.3, chub: 0.5, baby: false, child: true, elder: false }, // toddler (~3.3 heads)
-  { heightPx: 112, headRatio: 0.275, chub: 0.42, baby: false, child: true, elder: false }, // early (~3.6)
-  { heightPx: 128, headRatio: 0.245, chub: 0.32, baby: false, child: true, elder: false }, // elementary (~4.1)
-  { heightPx: 142, headRatio: 0.21, chub: 0.24, baby: false, child: false, elder: false }, // middle (~4.8)
-  { heightPx: 154, headRatio: 0.188, chub: 0.18, baby: false, child: false, elder: false }, // high (~5.3)
-  { heightPx: 164, headRatio: 0.172, chub: 0.15, baby: false, child: false, elder: false }, // university (~5.8)
-  { heightPx: 170, headRatio: 0.158, chub: 0.15, baby: false, child: false, elder: false }, // career (~6.3 heads tall)
-  { heightPx: 170, headRatio: 0.158, chub: 0.18, baby: false, child: false, elder: false }, // marriage
-  { heightPx: 166, headRatio: 0.163, chub: 0.24, baby: false, child: false, elder: false }, // midlife
-  { heightPx: 158, headRatio: 0.172, chub: 0.3, baby: false, child: false, elder: true }, // senior
-  { heightPx: 150, headRatio: 0.178, chub: 0.32, baby: false, child: false, elder: true }, // retirement
+  { heightPx: 72, headRatio: 0.54, chub: 1.0, baby: true, child: true, elder: false }, // newborn crawl
+  { heightPx: 80, headRatio: 0.48, chub: 0.62, baby: false, child: true, elder: false }, // toddler
+  { heightPx: 88, headRatio: 0.44, chub: 0.52, baby: false, child: true, elder: false }, // early childhood
+  { heightPx: 96, headRatio: 0.41, chub: 0.44, baby: false, child: true, elder: false }, // elementary
+  { heightPx: 106, headRatio: 0.38, chub: 0.34, baby: false, child: true, elder: false }, // middle school
+  { heightPx: 116, headRatio: 0.35, chub: 0.28, baby: false, child: false, elder: false }, // high school
+  { heightPx: 124, headRatio: 0.33, chub: 0.24, baby: false, child: false, elder: false }, // university
+  { heightPx: 128, headRatio: 0.32, chub: 0.22, baby: false, child: false, elder: false }, // career (~3.1 heads)
+  { heightPx: 128, headRatio: 0.32, chub: 0.24, baby: false, child: false, elder: false }, // marriage
+  { heightPx: 126, headRatio: 0.325, chub: 0.3, baby: false, child: false, elder: false }, // midlife
+  { heightPx: 120, headRatio: 0.35, chub: 0.36, baby: false, child: false, elder: true }, // senior
+  { heightPx: 116, headRatio: 0.37, chub: 0.4, baby: false, child: false, elder: true }, // retirement
 ];
 
 interface HeritagePalette {
@@ -945,6 +947,12 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
 // ===========================================================================
 
 export function drawCharacter(ctx: CanvasRenderingContext2D, cx: number, footY: number, look: AvatarLook, walkPhase: number, motionInput: AvatarMotion | boolean): void {
+  drawCuteCharacter(ctx, cx, footY, look, walkPhase, motionInput);
+}
+
+/** Kept as an unexported rollback reference while v5's renderer is reviewed.
+ * Rollup removes this legacy branch from the production bundle. */
+function drawLegacyCharacter(ctx: CanvasRenderingContext2D, cx: number, footY: number, look: AvatarLook, walkPhase: number, motionInput: AvatarMotion | boolean): void {
   const motion = motionFrom(motionInput);
   if (look.baby) drawBaby(ctx, cx, footY, look, walkPhase, motion);
   else if (motion.pose === "sit") drawSeated(ctx, cx, footY, look, walkPhase);
