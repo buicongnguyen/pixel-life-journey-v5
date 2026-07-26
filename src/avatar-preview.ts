@@ -747,18 +747,22 @@ function renderSummerOverview(now: number): void {
   drawSummerPreviewHeader();
   SUMMER_GENDERS.forEach((gender, row) => {
     const footY = 390 + row * 390;
-    lane(
-      footY,
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(34, footY - 205, width - 68, 238);
+    label(
       gender === "male"
         ? "Male summer characters"
-        : "Female summer characters"
+        : "Female summer characters",
+      50,
+      footY - 260,
+      "left"
     );
     SUMMER_HERITAGES.forEach((heritage, column) => {
       const groupX = 235 + column * 380;
       label(
         summerIdentityLabels[heritage],
         groupX + 18,
-        footY - 170
+        footY - 225
       );
       drawSummerCharacter(
         ctx,
