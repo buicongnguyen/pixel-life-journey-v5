@@ -4,6 +4,7 @@ import {
   PROFESSION_ROLES,
   professionLifeOptions,
   professionNpcsForStage,
+  sameProfessionVisual,
   stageHasProfessionNpcs,
 } from "./profession-npcs";
 
@@ -62,6 +63,29 @@ describe("adult profession NPC cast", () => {
     }
   });
 
+  it("never reuses the active player's complete career character", () => {
+    const reserved = {
+      uniform: "doctor",
+      gender: "female",
+      heritage: "asian",
+    } as const;
+    for (const stageId of PROFESSION_NPC_STAGE_IDS) {
+      for (let seed = 0; seed < 50; seed += 1) {
+        const cast = professionNpcsForStage(
+          `player-${seed}`,
+          stageId,
+          3,
+          reserved
+        );
+        expect(
+          cast.some((npc) =>
+            sameProfessionVisual(npc, reserved)
+          )
+        ).toBe(false);
+      }
+    }
+  });
+
   it("varies the cast across lives and chapters", () => {
     const casts = new Set(
       ["life-a", "life-b", "life-c", "life-d"].flatMap((seed) =>
@@ -93,7 +117,16 @@ describe("adult profession NPC cast", () => {
   });
 
   it("builds unique interactable station options with matching fallback gender", () => {
-    const options = professionLifeOptions("life-a", "career");
+    const options = professionLifeOptions(
+      "life-a",
+      "career",
+      3,
+      {
+        uniform: "dancer",
+        gender: "male",
+        heritage: "western",
+      }
+    );
     expect(new Set(options.map((option) => option.id)).size).toBe(3);
     for (const option of options) {
       expect(option.professionNpc).toBeDefined();
@@ -105,6 +138,11 @@ describe("adult profession NPC cast", () => {
       expect(["western", "asian"]).toContain(
         option.professionNpc?.heritage
       );
+      expect(
+        option.professionNpc
+          ? `${option.professionNpc.uniform}:${option.professionNpc.gender}:${option.professionNpc.heritage}`
+          : ""
+      ).not.toBe("dancer:male:western");
     }
   });
 });

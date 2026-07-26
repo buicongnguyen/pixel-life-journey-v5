@@ -1,13 +1,24 @@
 # Occupation character atlases
 
 These assets add a visibly different adult occupation cast to the v5 career
-picker without replacing the player's chosen face, hair, or everyday outfit.
-Only Asian and Western representatives are included in this set, matching the
-requested scope. Other heritages retain the existing emoji career cards.
+picker. During Career, Marriage, and Middle Age, a player who selects one of
+six reviewed careers uses a full occupation character in the room. Doctor
+and Nurse intentionally share the same reviewed medical-scrubs uniform set, so
+the assets still contain five distinct uniform rows.
+Only Asian and Western representatives are included in this set. Other
+heritages and careers without exact reviewed art retain the player's normal
+character.
+
+The atlases are complete characters, not clothes-only layers. Using one as the
+player therefore replaces the chosen face and hair while that career look is
+active. Doctor and Farmer also use deliberately middle-aged representatives.
+Preserving every player identity while changing only clothing requires a
+future set of modular outfit layers.
 
 ## Runtime contract
 
-- Jobs: `doctor`, `trainer`, `dancer`, `soldier`, `farmer`
+- Uniform sets: `doctor` (Doctor and Nurse), `trainer`, `dancer`, `soldier`,
+  `farmer`
 - Heritages: `western`, `asian`
 - Genders: `male`, `female`
 - One physically separate PNG for every job/heritage/gender combination

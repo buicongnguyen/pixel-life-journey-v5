@@ -48,6 +48,11 @@ them in balance, and at the very end the game writes the **story of the life you
 ## ✨ What you control
 
 - **👦/👧 Character presentation** at birth (changes your character and story language).
+- **☀️ Adult seasons and summer clothes** — Career, Marriage and Middle Age
+  progress through stable Spring, Summer, Autumn and Winter quarters. During
+  Summer, eligible casual and off-duty characters switch to reviewed
+  short-sleeve outfits with shorts or knee-length skirts, including real
+  walking poses in every direction. Required professional uniforms still win.
 - **👨‍👩‍👧 The people in your life** — bond with the characters in each room: **Mum, Dad,
   Grandma, Grandpa** as a baby; **study pals, best friends and a first crush** at school;
   a **coworker and gym buddy** at work; your **spouse, kids and old friends** later on. And
@@ -59,6 +64,9 @@ them in balance, and at the very end the game writes the **story of the life you
 - **🧠 IQ** — a real intelligence stat (40–160, mean 100), starting at **60** as a baby.
   It grows with age and study but **never jumps** — you can't cram your way to genius, and
   it gently fades in old age. A high IQ unlocks (and is paid more by) the top careers.
+  Advanced life setup can use an automatic age-appropriate IQ when starting in a later
+  chapter, or an exact testing score. IQ 150 is the career threshold; choose **160**
+  for enough headroom to test every job after University.
 - **🧸 Toys** — toy car, doll, smartphone — each a different childhood trade-off.
 - **⚖️ Weight** — a live wellbeing meter; nutrition and activity influence it, and large
   changes can affect health without determining anyone's worth or relationships.
@@ -66,7 +74,7 @@ them in balance, and at the very end the game writes the **story of the life you
   large. Fun costs money — parties, holidays, games, eating out, even a scratch card — and
   **if you can't afford it, you can't do it**, so earning (jobs, chores, a side hustle)
   matters. High health, happiness and IQ even **discount** what activities cost you.
-- **💼 Career & profile** — choose from **16 careers** across fields (Service → Trades →
+- **💼 Career & profile** — choose from **20 careers** across fields (Service → Trades →
   Tech → Medicine → Finance → Law → Business…); your salary = the job × your IQ, and the
   best roles need a high IQ. **Change jobs or climb the ladder** any time from the 💼
   Career desk, and open your **LinkedIn-style career profile** (💼 button or `P`) to see
@@ -139,6 +147,10 @@ university, and middle-age work is recorded in
 [`V5_CHARACTER_STAGE_EXPANSION_WORKLOG.md`](V5_CHARACTER_STAGE_EXPANSION_WORKLOG.md).
 The seated-newborn and body-motion release is recorded in
 [`V5_NEWBORN_SEATED_AND_MOTION_WORKLOG.md`](V5_NEWBORN_SEATED_AND_MOTION_WORKLOG.md).
+`avatar-preview.html?summer` reviews every male/female and heritage-separated
+summer identity; the Career testing, persistent job outfits, seasonal policy,
+and production asset contract are recorded in
+[`V5_CAREER_TESTING_AND_SUMMER_WORKLOG.md`](V5_CAREER_TESTING_AND_SUMMER_WORKLOG.md).
 
 ## 📖 Biography mode
 

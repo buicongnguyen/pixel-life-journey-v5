@@ -15,12 +15,39 @@ The visual cast covers:
 
 ## Product decision
 
-The occupation figures are career representatives in the career-choice and
-career-move cards. They do not replace the player's established face or hair.
-This prevents a job change from silently changing character identity.
+The occupation figures began as career representatives in the career-choice
+and career-move cards. They now also become the player's in-room character
+during Career, Marriage, and Middle Age when the selected job has an exact
+reviewed atlas. Senior and Retirement return to the normal age-correct avatar.
+
+These atlases are complete characters rather than clothes-only layers, so the
+temporary career look does replace the player's established face and hair.
+Doctor and Farmer also use deliberately middle-aged representatives. A future
+identity-preserving implementation needs modular clothing layers for every
+appearance family; this release never substitutes an unrelated job, gender,
+or heritage while those layers do not exist.
 
 Four additional careers are added alongside the existing Doctor career:
 Professional Dancer, Farmer, Fitness Trainer, and Army Soldier.
+
+## Player career outfit behavior — 2026-07-26
+
+- The selected reviewed occupation appears on the player immediately after
+  career selection and after later job changes.
+- It persists through Career, Marriage, and Middle Age, inclusive.
+- It is derived from the saved occupation, so save/resume and rewind restore
+  the correct historical career without a save-schema change.
+- Direction, neutral/moving pose, and walk phase use all eight atlas frames.
+- Male and female art remain explicitly separate.
+- Asian and Western art remain explicitly separate.
+- Nurse intentionally shares the reviewed medical-scrubs atlas with Doctor;
+  its career label, history, salary, and gameplay remain independently Nurse.
+- Careers without exact outfit art retain the normal player avatar rather than
+  borrowing a visually different profession.
+- Black and Middle Eastern players retain their normal avatar rather than
+  borrowing another heritage.
+- A profession NPC never receives the same full uniform/gender/heritage atlas
+  as the active player, so two pixel-identical people cannot share the room.
 
 ## Asset separation
 

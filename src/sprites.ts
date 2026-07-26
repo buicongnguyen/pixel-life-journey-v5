@@ -1021,7 +1021,7 @@ export function personLook(
 // Character rendering
 // ===========================================================================
 
-function drawInteractionExpression(
+export function drawInteractionExpression(
   ctx: CanvasRenderingContext2D,
   cx: number,
   footY: number,

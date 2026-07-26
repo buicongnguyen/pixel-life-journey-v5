@@ -220,7 +220,7 @@ describe("occupation character atlas routing", () => {
     expect(ctx.ellipse).toHaveBeenCalledOnce();
   });
 
-  it("adds all five visual careers without encoding gender in the job", async () => {
+  it("adds all reviewed visual careers without encoding gender in the job", async () => {
     const visualJobs = OCCUPATIONS.filter(
       (occupation) => occupation.uniform
     );
@@ -230,6 +230,7 @@ describe("occupation character atlas routing", () => {
       "dancer",
       "doctor",
       "farmer",
+      "nurse",
       "soldier",
       "trainer",
     ]);
@@ -237,6 +238,7 @@ describe("occupation character atlas routing", () => {
       visualJobs.map((occupation) => occupation.uniform).sort()
     ).toEqual([
       "dancer",
+      "doctor",
       "doctor",
       "farmer",
       "soldier",

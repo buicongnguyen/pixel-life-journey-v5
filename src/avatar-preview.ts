@@ -17,6 +17,13 @@ import {
   warmOccupationCharacterAtlases,
   type OccupationFacing,
 } from "./occupation-characters";
+import {
+  drawSummerCharacter,
+  SUMMER_GENDERS,
+  SUMMER_HERITAGES,
+  warmSummerCharacterAtlases,
+  type SummerFacing,
+} from "./summer-characters";
 import type {
   CharacterAppearanceId,
   Gender,
@@ -678,6 +685,167 @@ function renderOccupations(now: number): void {
   else renderOccupationOverview(now);
 }
 
+const summerIdentityLabels: Record<
+  HeritageStyle,
+  string
+> = {
+  western: "Western",
+  asian: "Asian",
+  middleEastern: "Middle Eastern",
+  black: "Black / African diaspora",
+};
+
+function requestedSummerIdentity(): {
+  heritage: HeritageStyle;
+  gender: Gender;
+} | null {
+  const heritage = searchParams.get("heritage");
+  const gender = searchParams.get("gender");
+  if (
+    !SUMMER_HERITAGES.includes(
+      heritage as HeritageStyle
+    ) ||
+    !SUMMER_GENDERS.includes(gender as Gender)
+  ) {
+    return null;
+  }
+  return {
+    heritage: heritage as HeritageStyle,
+    gender: gender as Gender,
+  };
+}
+
+function drawSummerPreviewHeader(
+  detail?: { heritage: HeritageStyle; gender: Gender }
+): void {
+  ctx.fillStyle = "#ffd76a";
+  ctx.fillRect(0, 0, width, 92);
+  ctx.fillStyle = "#2c2531";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 29px Arial";
+  ctx.fillText(
+    detail
+      ? `Summer motion review · ${summerIdentityLabels[detail.heritage]} ${detail.gender}`
+      : "Summer wardrobe · every heritage, male and female kept separate",
+    36,
+    34
+  );
+  ctx.font = "16px Arial";
+  ctx.fillText(
+    detail
+      ? "Four neutral directions + four genuine walking poses · short sleeves and short summer bottoms"
+      : "Eight reviewed warm-weather identities · neutral front + animated side step",
+    36,
+    68
+  );
+}
+
+function renderSummerOverview(now: number): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawSummerPreviewHeader();
+  SUMMER_GENDERS.forEach((gender, row) => {
+    const footY = 390 + row * 390;
+    lane(
+      footY,
+      gender === "male"
+        ? "Male summer characters"
+        : "Female summer characters"
+    );
+    SUMMER_HERITAGES.forEach((heritage, column) => {
+      const groupX = 235 + column * 380;
+      label(
+        summerIdentityLabels[heritage],
+        groupX + 18,
+        footY - 170
+      );
+      drawSummerCharacter(
+        ctx,
+        groupX - 58,
+        footY,
+        heritage,
+        gender,
+        { facing: "front", size: 184 }
+      );
+      drawSummerCharacter(
+        ctx,
+        groupX + 98,
+        footY,
+        heritage,
+        gender,
+        {
+          facing: "right",
+          moving: true,
+          phase: now / 170,
+          size: 184,
+        }
+      );
+    });
+  });
+}
+
+function renderSummerDetail(
+  identity: { heritage: HeritageStyle; gender: Gender }
+): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawSummerPreviewHeader(identity);
+  const facings: SummerFacing[] = [
+    "front",
+    "left",
+    "back",
+    "right",
+  ];
+  const columnX = [
+    125, 315, 505, 695, 895, 1085, 1275, 1465,
+  ];
+  const topLabels = [
+    "front neutral",
+    "left neutral",
+    "back neutral",
+    "right neutral",
+    "front step",
+    "left step",
+    "back step",
+    "right step",
+  ];
+  topLabels.forEach((text, column) => {
+    label(text, columnX[column], 150);
+  });
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(34, 520 - 132, width - 68, 164);
+  facings.forEach((facing, column) => {
+    drawSummerCharacter(
+      ctx,
+      columnX[column],
+      520,
+      identity.heritage,
+      identity.gender,
+      { facing, size: 188 }
+    );
+    drawSummerCharacter(
+      ctx,
+      columnX[column + 4],
+      520,
+      identity.heritage,
+      identity.gender,
+      {
+        facing,
+        moving: true,
+        phase: 1,
+        size: 188,
+      }
+    );
+  });
+}
+
+function renderSummer(now: number): void {
+  const detail = requestedSummerIdentity();
+  if (detail) renderSummerDetail(detail);
+  else renderSummerOverview(now);
+}
+
 function renderInteractions(now: number): void {
   ctx.fillStyle = "#26384a";
   ctx.fillRect(0, 0, width, height);
@@ -849,6 +1017,13 @@ if (location.search.includes("interactions")) {
   void warmOccupationCharacterAtlases();
   const animate = (now: number): void => {
     renderOccupations(now);
+    window.requestAnimationFrame(animate);
+  };
+  window.requestAnimationFrame(animate);
+} else if (location.search.includes("summer")) {
+  void warmSummerCharacterAtlases();
+  const animate = (now: number): void => {
+    renderSummer(now);
     window.requestAnimationFrame(animate);
   };
   window.requestAnimationFrame(animate);

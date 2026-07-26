@@ -1,13 +1,15 @@
 # Pixel Life Journey v5 — Design & Balance Document
 
 > V5 keeps the v4 pacing model: the standard budget is approximately eight actions per chapter.
-> Sandbox pace and starting-stage controls remain optional advanced settings, while
+> Sandbox pace, starting-stage, and starting-IQ controls remain optional advanced settings, while
 > the default path is balanced for a 15–20 minute complete life.
 
 > V5 art direction: characters use an original, compact chibi language with large
 > expressive heads, rounded shapes, short limbs, warm dark outlines and readable
 > four-direction poses. Sidewalk Iced Tea v3 informed the broad appeal principles,
 > but no character assets, costumes, poses or source code are copied.
+> Adult chapters also carry a stable four-season visual rhythm. Reviewed
+> short-sleeve summer bodies remain subordinate to required career uniforms.
 
 > A living design doc. The whole game is **data-driven**: the life-stage graph
 > below mirrors the data in [`src/stages.ts`](src/stages.ts). To add or change a
@@ -66,8 +68,15 @@ Plus two derived values:
 - **💼 Occupation → salary** — at the Career stage you pick a job
   (see [`occupations.ts`](src/occupations.ts)). Your salary = `base × (0.7 +
   Smarts/140) × the job's pay multiplier`, so **Smarts and the job together** set
-  your pay. Better jobs are **locked** until you're smart enough (Doctor needs 🧠 68),
+  your pay. Better jobs are **locked** until you're smart enough (Doctor needs 🧠 132),
   and you can **upskill** at work to raise Smarts mid-career.
+- **☀️ Adult seasons → wardrobe** — Career, Marriage and Middle Age divide their
+  saved age progress into four equal Spring/Summer/Autumn/Winter quarters.
+  During Summer, casual jobs can use short sleeves and short lower garments in
+  the Career office; all unillustrated jobs can use them off duty in the home
+  chapters. Reviewed, regulated, safety and formal workwear retains precedence.
+  Season selection is derived from chapter and saved age, never animation time
+  or the rotating scenery, so reload and rewind reproduce the same result.
 - **🏠 Buy a house** — at Career/Marriage you can buy a home you can afford
   (see [`houses.ts`](src/houses.ts)). The tier sets a lasting **home quality (1–4)**
   that becomes the *background* of every home room afterwards — a grand house is

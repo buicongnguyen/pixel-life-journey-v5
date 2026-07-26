@@ -28,6 +28,22 @@ export interface ProfessionNpc extends ProfessionNpcSpec {
   effects: Partial<Stats>;
 }
 
+export type ProfessionVisualIdentity = Pick<
+  ProfessionNpcSpec,
+  "uniform" | "gender" | "heritage"
+>;
+
+export function sameProfessionVisual(
+  left: ProfessionVisualIdentity,
+  right: ProfessionVisualIdentity
+): boolean {
+  return (
+    left.uniform === right.uniform &&
+    left.gender === right.gender &&
+    left.heritage === right.heritage
+  );
+}
+
 /**
  * The nurse uses the reviewed medical-scrubs character sheet shared with the
  * doctor. Its label, interaction copy, gender, and heritage remain independent.
@@ -123,7 +139,8 @@ export function stageHasProfessionNpcs(stageId: string): boolean {
 export function professionNpcsForStage(
   lifeSeed: string,
   stageId: string,
-  count = 3
+  count = 3,
+  reservedVisual?: ProfessionVisualIdentity
 ): ProfessionNpc[] {
   if (!stageHasProfessionNpcs(stageId) || count <= 0) return [];
   const ordered = [...PROFESSION_ROLES].sort((a, b) => {
@@ -143,7 +160,13 @@ export function professionNpcsForStage(
     stableHash(`${lifeSeed}:${stageId}:profession-gender`) % 2;
   const firstHeritage =
     stableHash(`${lifeSeed}:${stageId}:profession-heritage`) % 2;
-  const usedVisuals = new Set<string>();
+  const visualKey = (
+    visual: ProfessionVisualIdentity
+  ): string =>
+    `${visual.uniform}:${visual.gender}:${visual.heritage}`;
+  const usedVisuals = new Set<string>(
+    reservedVisual ? [visualKey(reservedVisual)] : []
+  );
 
   return selected.map((role, index) => {
     let gender =
@@ -162,12 +185,12 @@ export function professionNpcsForStage(
         PROFESSION_HERITAGES[
           (firstHeritage + index + variant) % 2
         ];
-      const visualKey =
+      const candidateVisualKey =
         `${role.uniform}:${candidateGender}:${candidateHeritage}`;
-      if (!usedVisuals.has(visualKey)) {
+      if (!usedVisuals.has(candidateVisualKey)) {
         gender = candidateGender;
         heritage = candidateHeritage;
-        usedVisuals.add(visualKey);
+        usedVisuals.add(candidateVisualKey);
         break;
       }
     }
@@ -182,10 +205,15 @@ export function professionNpcsForStage(
 export function professionLifeOptions(
   lifeSeed: string,
   stageId: string,
-  count = 3
+  count = 3,
+  reservedVisual?: ProfessionVisualIdentity
 ): LifeOption[] {
-  return professionNpcsForStage(lifeSeed, stageId, count).map(
-    (profession) => ({
+  return professionNpcsForStage(
+    lifeSeed,
+    stageId,
+    count,
+    reservedVisual
+  ).map((profession) => ({
       id: `profession-${stageId}-${profession.id}`,
       label: profession.label,
       icon: profession.icon,
@@ -203,6 +231,5 @@ export function professionLifeOptions(
       category: "social",
       effects: profession.effects,
       storyTag: `profession_${profession.id}`,
-    })
-  );
+    }));
 }

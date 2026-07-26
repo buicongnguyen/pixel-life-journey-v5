@@ -72,7 +72,7 @@ import {
   makeMoment,
   newBiography,
 } from "./biography";
-import { avatarLook, drawAvatar, drawCharacterNamePlate, drawEventItem, drawPerson, drawPet, drawRoom, drawStation, personLook, type AvatarFacing } from "./sprites";
+import { avatarLook, drawAvatar, drawCharacterNamePlate, drawEventItem, drawInteractionExpression, drawPerson, drawPet, drawRoom, drawStation, personLook, type AvatarFacing } from "./sprites";
 import {
   warmStorybookCharacterAtlases,
   warmStorybookPortraits,
@@ -85,7 +85,26 @@ import {
   occupationHeritage,
   warmOccupationCharacterAtlases,
 } from "./occupation-characters";
-import { professionLifeOptions } from "./profession-npcs";
+import {
+  drawSummerCharacter,
+  warmSummerCharacterAtlases,
+} from "./summer-characters";
+import {
+  professionLifeOptions,
+  sameProfessionVisual,
+} from "./profession-npcs";
+import { playerCareerUniform } from "./career-uniform";
+import { playerBodyVariantAtAge } from "./player-body-variant";
+import {
+  LIFE_SEASONS,
+  SEASONAL_LIFE_STAGE_IDS,
+  lifeSeasonAt,
+  type LifeSeason,
+} from "./life-season";
+import {
+  normalizeStartingIq,
+  startingIqPlan,
+} from "./setup-iq";
 import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
@@ -159,6 +178,17 @@ const INVENTORY_MAX_SLOTS = 8;
 const INVENTORY_MAX_COUNT = 9;
 const FOOD_USE_COOLDOWN = 5;
 const FOOD_FRESH = 20; // enough time to understand the tray and choose eat/give
+const PLAYER_CAREER_UNIFORM_SIZE = 142;
+const PLAYER_SUMMER_OUTFIT_SIZE = 142;
+const LIFE_SEASON_DISPLAY: Record<
+  LifeSeason,
+  { emoji: string; label: string }
+> = {
+  spring: { emoji: "🌱", label: "Spring" },
+  summer: { emoji: "☀️", label: "Summer" },
+  autumn: { emoji: "🍂", label: "Autumn" },
+  winter: { emoji: "❄️", label: "Winter" },
+};
 const ELEMENTARY_INDEX = STAGES.findIndex((s) => s.id === "elementary");
 const MIDDLE_INDEX = STAGES.findIndex((s) => s.id === "middle");
 const CAREER_INDEX = STAGES.findIndex((s) => s.id === "career");
@@ -1575,6 +1605,14 @@ export class Game {
       mode: this.mode,
       stage: STAGES[this.stageIndex]?.id,
       upperScene: this.upperScene(),
+      lifeSeason: this.currentLifeSeason(),
+      playerBodyVariant: this.currentPlayerBodyVariant(),
+      playerCareerUniform: playerCareerUniform(
+        this.occupation,
+        STAGES[this.stageIndex]?.id ?? "",
+        this.gender,
+        this.heritage
+      ),
       age: Math.round(this.age * 10) / 10,
       lifeSpeed: this.lifeSpeed,
       familyZoneShare: this.familyZoneShare(),
@@ -1828,13 +1866,41 @@ export class Game {
       button.textContent = "Loading your character…";
     }
     try {
+      const stageIndex = save.snapshot.stageIndex;
+      const savedOccupation = save.snapshot.occupationId
+        ? OCCUPATIONS.find(
+            (occupation) =>
+              occupation.id === save.snapshot.occupationId
+          ) ?? null
+        : null;
+      const savedBodyVariant = playerBodyVariantAtAge({
+        occupation: savedOccupation,
+        stageId: STAGES[stageIndex]?.id ?? "",
+        age: save.snapshot.age,
+        gender: save.snapshot.gender,
+        heritage,
+      });
       // Saved lives may use an atlas that has not been requested on the title
       // screen. Decode the whole heritage pair before gameplay so neither the
       // player nor opposite-gender family briefly flashes the old fallback.
       if (save.snapshot.petKind === "dog" || save.snapshot.petKind === "cat") {
         void warmStorybookPetAtlases(save.snapshot.petKind);
       }
-      const ready = await warmStorybookCharacterAtlases(heritage);
+      const [ready] = await Promise.all([
+        warmStorybookCharacterAtlases(heritage),
+        savedBodyVariant.kind === "career-uniform"
+          ? warmOccupationCharacterAtlases(
+              savedBodyVariant.careerUniform.heritage,
+              savedBodyVariant.careerUniform.gender,
+              savedBodyVariant.careerUniform.uniform
+            )
+          : savedBodyVariant.kind === "summer-casual"
+            ? warmSummerCharacterAtlases(
+                heritage,
+                save.snapshot.gender
+              )
+          : Promise.resolve(true),
+      ]);
       if (!ready) {
         if (button?.isConnected) {
           button.textContent = "Retry character download";
@@ -1843,7 +1909,6 @@ export class Game {
         return;
       }
       if (button && !button.isConnected) return;
-      const stageIndex = save.snapshot.stageIndex;
       const chapterEntry = save.timeline[stageIndex];
       this.playerName = typeof save.playerName === "string" ? save.playerName.slice(0, 40) : "";
       this.setLifeSpeed(save.lifeSpeed);
@@ -1911,7 +1976,12 @@ export class Game {
     } catch { /* sound is enhancement-only */ }
   }
 
-  private newGame(keepBiography = false, startStageIndex = 0, familyFundOverride?: number): void {
+  private newGame(
+    keepBiography = false,
+    startStageIndex = 0,
+    familyFundOverride?: number,
+    startingIqOverride: number | null = null
+  ): void {
     if (!keepBiography) this.clearSavedGame();
     if (!keepBiography) this.biography = null; // normal play is never a replay
     if (!keepBiography) this.lifeSeed = this.createLifeSeed();
@@ -1943,6 +2013,13 @@ export class Game {
     // roll a lifelong IQ potential (mean 100, sd 15, clamped) + a rare gifted bump
     this.iqCeiling = Math.max(70, Math.min(145, Math.round(gaussian(100, 15))));
     if (Math.random() < 0.02) this.iqCeiling = 150 + Math.floor(Math.random() * 11); // ~2% gifted (150-160)
+    const iqPlan = startingIqPlan(
+      STAGES[startIndex].ageStart,
+      this.iqCeiling,
+      keepBiography ? null : startingIqOverride
+    );
+    this.stats.smarts = iqPlan.currentIq;
+    this.iqCeiling = iqPlan.iqCeiling;
     this.geneBonus = Math.round((Math.random() * 10 - 5) * 10) / 10; // longevity genes -5..+5
     this.familyBond = 0;
     this.lifetimeEarned = 0;
@@ -1990,7 +2067,7 @@ export class Game {
     const start = STAGES[startIndex];
     this.hint(startIndex === 0
       ? "Move near Milk or a family member, then tap Collect."
-      : `${start.emoji} Started at ${start.name} (age ${start.ageStart}). Style: ${this.heritageLabel()}. Speed: ${this.lifeSpeedLabel()}.`);
+      : `${start.emoji} Started at ${start.name} (age ${start.ageStart}). IQ: ${Math.round(this.stats.smarts)}. Style: ${this.heritageLabel()}. Speed: ${this.lifeSpeedLabel()}.`);
   }
 
   private loadStage(i: number, restoring = false): void {
@@ -2004,6 +2081,7 @@ export class Game {
     this.focusIndex = -1;
     this.personReaction = null;
     this.buildStations();
+    this.warmPlayerBodyVariant();
     this.renderFocusPanel(); // reset the panel to the default prompt on stage entry
     this.renderInventory();
     // On a rewind the running averages + entry snapshot were just restored from
@@ -2121,9 +2199,21 @@ export class Game {
       s.options.filter((o) => this.optionAvailable(o)),
       s
     );
+    const reservedPlayerCareerVisual =
+      playerCareerUniform(
+        this.occupation,
+        s.id,
+        this.gender,
+        this.heritage
+      ) ?? undefined;
     return [
       ...base,
-      ...professionLifeOptions(this.lifeSeed, s.id),
+      ...professionLifeOptions(
+        this.lifeSeed,
+        s.id,
+        3,
+        reservedPlayerCareerVisual
+      ),
     ];
   }
 
@@ -2345,6 +2435,21 @@ export class Game {
     const scenes = STAGES[this.stageIndex]?.upperScenes ?? ["park"];
     if (scenes.length <= 1) return scenes[0] ?? "park";
     return scenes[Math.floor(this.renderTime / 12) % scenes.length];
+  }
+
+  private currentLifeSeason(): LifeSeason | null {
+    const stage = STAGES[this.stageIndex];
+    return stage ? lifeSeasonAt(stage.id, this.age) : null;
+  }
+
+  private currentPlayerBodyVariant() {
+    return playerBodyVariantAtAge({
+      occupation: this.occupation,
+      stageId: STAGES[this.stageIndex]?.id ?? "",
+      age: this.age,
+      gender: this.gender,
+      heritage: this.heritage,
+    });
   }
 
   private zoneBounds(zone: StationZone): { min: number; max: number } {
@@ -3322,6 +3427,11 @@ export class Game {
 
   private pickOccupation(o: Occupation): void {
     this.occupation = o;
+    // Career stations were first built before the initial career picker knew
+    // the player's job. Rebuild once now so a matching profession NPC receives
+    // a different reviewed visual identity.
+    this.buildStations();
+    this.warmPlayerBodyVariant();
     if (o.perks && !this.jobsTaken.has(o.id)) this.applyEff(o.perks, "split");
     this.jobsTaken.add(o.id);
     this.history.push({
@@ -4284,6 +4394,11 @@ export class Game {
       const t = this.renderTime;
       const activeReaction = this.currentPersonReaction();
       const doorActive = this.doorOpen();
+      const playerBodyVariant = this.currentPlayerBodyVariant();
+      const careerUniform =
+        playerBodyVariant.kind === "career-uniform"
+          ? playerBodyVariant.careerUniform
+          : null;
       drawRoom(ctx, s.theme, W, H, FLOOR_Y, doorActive, t, {
         scene: s.scene,
         upperScene: this.upperScene(),
@@ -4325,16 +4440,72 @@ export class Game {
           continue;
         }
         if (!d.station) {
-          drawAvatar(ctx, this.px, this.py, avatarLook(
+          const playerLook = avatarLook(
             this.stageIndex,
             this.gender,
             this.heritage,
             this.appearance
-          ), this.walkPhase, {
+          );
+          const playerMotion = {
             moving: this.moving,
             facing: this.facing,
             verticalBias: this.verticalBias,
-          }, activeReaction?.expressions.player);
+          };
+          let drewCustomBody = false;
+          if (careerUniform) {
+            drewCustomBody = drawOccupationCharacter(
+              ctx,
+              this.px,
+              this.py,
+              careerUniform.uniform,
+              careerUniform.heritage,
+              careerUniform.gender,
+              {
+                size: PLAYER_CAREER_UNIFORM_SIZE,
+                facing: this.facing,
+                moving: this.moving,
+                phase: this.walkPhase,
+              }
+            );
+          } else if (
+            playerBodyVariant.kind === "summer-casual"
+          ) {
+            drewCustomBody = drawSummerCharacter(
+              ctx,
+              this.px,
+              this.py,
+              this.heritage,
+              this.gender,
+              {
+                size: PLAYER_SUMMER_OUTFIT_SIZE,
+                facing: this.facing,
+                moving: this.moving,
+                phase: this.walkPhase,
+              }
+            );
+          }
+          if (drewCustomBody) {
+            drawInteractionExpression(
+              ctx,
+              this.px,
+              this.py,
+              playerLook,
+              this.walkPhase,
+              playerMotion,
+              activeReaction?.expressions.player ??
+                "neutral"
+            );
+          } else {
+            drawAvatar(
+              ctx,
+              this.px,
+              this.py,
+              playerLook,
+              this.walkPhase,
+              playerMotion,
+              activeReaction?.expressions.player
+            );
+          }
           continue;
         }
         const st = d.station;
@@ -4362,7 +4533,14 @@ export class Game {
         } else if (st.opt.person) {
           const profession = st.opt.professionNpc;
           let drewProfession = false;
-          if (profession) {
+          if (
+            profession &&
+            (!careerUniform ||
+              !sameProfessionVisual(
+                profession,
+                careerUniform
+              ))
+          ) {
             ctx.save();
             if (used) ctx.globalAlpha = 0.5;
             drewProfession = drawOccupationCharacter(
@@ -4491,6 +4669,10 @@ export class Game {
     // Most of the HUD changes only on a discrete action / mode change, yet this runs
     // every frame. A cheap numeric signature lets us skip the reflow-causing DOM
     // writes when nothing relevant changed.
+    const lifeSeason = this.currentLifeSeason();
+    const seasonSig = lifeSeason
+      ? LIFE_SEASONS.indexOf(lifeSeason) + 1
+      : 0;
     const sig = Math.round(this.money)
       + Math.floor(this.age) * 131
       + this.stageIndex * 100003
@@ -4502,7 +4684,8 @@ export class Game {
       + Math.round(this.muscle) * 29
       + Math.round(this.nutrition) * 31
       + Math.round(this.mental) * 37
-      + this.lifeSpeed * 41;
+      + this.lifeSpeed * 41
+      + seasonSig * 43;
     const occId = this.occupation?.id ?? "";
     if (sig !== this.hudSig || this.mode !== this.hudMode || occId !== this.hudOcc) {
     this.hudSig = sig; this.hudMode = this.mode; this.hudOcc = occId;
@@ -4543,7 +4726,10 @@ export class Game {
       this.ui.stageLabel.textContent = `${s.emoji} ${title} · 📖 ${this.biography.name || "A life"}`;
     } else {
       const occ = this.occupation ? ` · ${this.occupation.emoji} ${this.occupation.name}` : "";
-      this.ui.stageLabel.textContent = `${s.emoji} ${s.name}${occ}`;
+      const season = lifeSeason
+        ? ` · ${LIFE_SEASON_DISPLAY[lifeSeason].emoji} ${LIFE_SEASON_DISPLAY[lifeSeason].label}`
+        : "";
+      this.ui.stageLabel.textContent = `${s.emoji} ${s.name}${season}${occ}`;
     }
     this.ui.ageLabel.textContent = String(Math.floor(this.age));
     this.ui.leLabel.textContent =
@@ -5947,6 +6133,21 @@ export class Game {
     const stageOptions = STAGES.map((s, i) =>
       `<option value="${i}">${s.emoji} ${esc(s.name)} · age ${s.ageStart}-${s.ageEnd}</option>`
     ).join("");
+    const allCareersIq = Math.max(
+      ...OCCUPATIONS.map((occupation) => occupation.minIq)
+    );
+    const iqOptions = Array.from(
+      { length: (160 - 40) / 5 + 1 },
+      (_, index) => 40 + index * 5
+    ).map((iq) => {
+      const note =
+        iq === allCareersIq
+          ? " · career unlock threshold"
+          : iq === 160
+            ? " · maximum test headroom"
+            : "";
+      return `<option value="${iq}">${iq}${note}</option>`;
+    }).join("");
     const heritageCards = HERITAGE_OPTIONS.map((h) => `
       <button class="plj-heritage${h.id === this.heritage ? " is-selected" : ""}" data-heritage="${h.id}">
         <span>${esc(h.label)}</span>
@@ -5976,7 +6177,7 @@ export class Game {
         <button class="plj-btn" id="plj-start-life" disabled>Start life as ${this.appearance === "alternate" ? "New style" : "Classic"} ${this.gender === "female" ? "Girl" : "Boy"} →</button>
         <details class="plj-advanced">
           <summary>Advanced life setup</summary>
-          <p class="plj-sub">Appearance, economic background, starting chapter and pace.</p>
+          <p class="plj-sub">Appearance, economic background, starting chapter, IQ and pace.</p>
           <div class="plj-heritage-grid">${heritageCards}</div>
           <label class="plj-setup-field plj-setup-field-wide">
             <span>Economic background</span>
@@ -5988,6 +6189,14 @@ export class Game {
             <select id="plj-start-stage">${stageOptions}</select>
           </label>
           <label class="plj-setup-field">
+            <span>Starting IQ</span>
+            <select id="plj-start-iq">
+              <option value="">Automatic · match starting age</option>
+              ${iqOptions}
+            </select>
+            <small>University testing: use 160 so every Career option stays available.</small>
+          </label>
+          <label class="plj-setup-field plj-setup-field-wide">
             <span>Life speed <b id="plj-life-speed-readout">${this.lifeSpeedLabel()}</b></span>
             <input id="plj-life-speed" type="range" ${this.lifeSpeedInputAttrs()}>
           </label>
@@ -5999,6 +6208,14 @@ export class Game {
     const speedInput = this.ui.overlay.querySelector<HTMLInputElement>("#plj-life-speed")!;
     const speedReadout = this.ui.overlay.querySelector<HTMLElement>("#plj-life-speed-readout")!;
     const backgroundInput = this.ui.overlay.querySelector<HTMLSelectElement>("#plj-economic-background")!;
+    const startStageInput =
+      this.ui.overlay.querySelector<HTMLSelectElement>(
+        "#plj-start-stage"
+      )!;
+    const startIqInput =
+      this.ui.overlay.querySelector<HTMLSelectElement>(
+        "#plj-start-iq"
+      )!;
     speedInput.oninput = () => {
       this.setLifeSpeedIndex(Number(speedInput.value));
       speedInput.value = String(this.lifeSpeedIndex());
@@ -6038,7 +6255,11 @@ export class Game {
         this.playerName = (this.ui.overlay.querySelector<HTMLInputElement>("#plj-setup-name")?.value ?? "").slice(0, 40);
         this.heritage = this.normalizeHeritage(this.ui.overlay.querySelector<HTMLButtonElement>(".plj-heritage.is-selected")?.dataset.heritage);
         const selectedHeritage = this.heritage;
-        const startIndex = this.normalizeStageIndex(Number(this.ui.overlay.querySelector<HTMLSelectElement>("#plj-start-stage")?.value ?? 0));
+        const startIndex = this.normalizeStageIndex(
+          Number(startStageInput.value)
+        );
+        const startingIqOverride =
+          normalizeStartingIq(startIqInput.value);
         this.setLifeSpeedIndex(Number(speedInput.value));
         this.setupFamilyFund = backgroundMoney(this.economicBackground);
         const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
@@ -6047,12 +6268,21 @@ export class Game {
             ".plj-heritage"
           )
         );
+        const setupControls = [
+          backgroundInput,
+          startStageInput,
+          startIqInput,
+          speedInput,
+        ];
         genderButtons.forEach((choice) => {
           choice.disabled = true;
           choice.setAttribute("aria-busy", "true");
         });
         heritageButtons.forEach((choice) => {
           choice.disabled = true;
+        });
+        setupControls.forEach((control) => {
+          control.disabled = true;
         });
         startLifeButton.disabled = true;
         startLifeButton.setAttribute("aria-busy", "true");
@@ -6068,13 +6298,21 @@ export class Game {
           heritageButtons.forEach((choice) => {
             choice.disabled = false;
           });
+          setupControls.forEach((control) => {
+            control.disabled = false;
+          });
           startLifeButton.disabled = false;
           startLifeButton.removeAttribute("aria-busy");
           startLifeButton.textContent = "Retry character download";
           this.hint("Character art could not load. Check your connection and retry.");
           return;
         }
-        this.newGame(false, startIndex, this.setupFamilyFund);
+        this.newGame(
+          false,
+          startIndex,
+          this.setupFamilyFund,
+          startingIqOverride
+        );
     };
     void this.prepareSetupCharacterPair(this.heritage);
   }
@@ -6624,6 +6862,33 @@ export class Game {
     });
   }
 
+  /** Decode the exact custom body needed by the current adult chapter. */
+  private warmPlayerBodyVariant(): void {
+    const bodyVariant = this.currentPlayerBodyVariant();
+    if (bodyVariant.kind === "career-uniform") {
+      void warmOccupationCharacterAtlases(
+        bodyVariant.careerUniform.heritage,
+        bodyVariant.careerUniform.gender,
+        bodyVariant.careerUniform.uniform
+      );
+      return;
+    }
+    const stageId = STAGES[this.stageIndex]?.id ?? "";
+    if (
+      bodyVariant.kind === "summer-casual" ||
+      (SEASONAL_LIFE_STAGE_IDS.includes(
+        stageId as (typeof SEASONAL_LIFE_STAGE_IDS)[number]
+      ) &&
+        !!this.occupation &&
+        !this.occupation.uniform)
+    ) {
+      void warmSummerCharacterAtlases(
+        this.heritage,
+        this.gender
+      );
+    }
+  }
+
   private showOccupation(): void {
     const cards = OCCUPATIONS.map((o) => {
       const locked = this.stats.smarts < o.minIq;
@@ -6756,6 +7021,11 @@ export class Game {
   private changeJob(o: Occupation): void {
     const prev = this.occupation;
     this.occupation = o;
+    // Rebuild the deterministic profession cast against the new reserved
+    // player visual now. Otherwise a matching NPC would fall back to a generic
+    // body until reload, when the rebuilt room would suddenly look different.
+    this.buildStations();
+    this.warmPlayerBodyVariant();
     // One-off perks + the "fresh start" happiness only the FIRST time you hold a
     // job this life — otherwise toggling A→B→A→B farms free stats every switch.
     if (!this.jobsTaken.has(o.id)) {

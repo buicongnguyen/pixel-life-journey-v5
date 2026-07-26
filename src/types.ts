@@ -275,7 +275,7 @@ export interface Occupation {
   minIq: number;
   /** Small one-off boost applied when you take the job. */
   perks?: Partial<Stats>;
-  /** Optional generated career representative shown in occupation UI. */
+  /** Optional reviewed career outfit shown in the picker and worn in adult play. */
   uniform?: JobUniform;
   storyTag: string;
 }

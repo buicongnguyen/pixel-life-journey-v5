@@ -1700,6 +1700,11 @@ body {
   width: 100%;
   box-sizing: border-box;
 }
+.plj-setup-field small {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
 .plj-money-edit-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
