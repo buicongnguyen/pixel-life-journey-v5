@@ -28,6 +28,18 @@ export type JobUniform =
   | "soldier"
   | "farmer";
 
+/**
+ * A reviewed, explicitly gendered profession character that can appear as an
+ * interactable adult NPC. Occupation art currently covers Asian and Western
+ * character families; the renderer never infers or swaps the stored gender.
+ */
+export interface ProfessionNpcSpec {
+  id: string;
+  uniform: JobUniform;
+  gender: Gender;
+  heritage: Extract<HeritageStyle, "western" | "asian">;
+}
+
 /** Loose grouping used for icon tinting and balance reasoning. */
 export type OptionCategory =
   | "health"
@@ -117,6 +129,8 @@ export interface LifeOption {
   icon: string;
   /** If set, this choice is a PERSON drawn as a little character, not a pedestal. */
   person?: PersonKind;
+  /** Optional reviewed occupation costume for an adult person station. */
+  professionNpc?: ProfessionNpcSpec;
   /** One-line description shown in the focus panel. */
   desc: string;
   category: OptionCategory;

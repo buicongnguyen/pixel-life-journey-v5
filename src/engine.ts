@@ -49,8 +49,12 @@ import { COMMUTES, type CommuteTier } from "./commutes";
 import { EVENTS, type RandomEvent } from "./events";
 import {
   friendAgeForStage,
+  friendGenderForOrdinal,
+  friendVisualKey,
+  nextFriendVisualIdentity,
+  normalizeFriendVisualIdentities,
   isSameStagePeerKind,
-  peerHeritage,
+  peerVisualIdentity,
 } from "./friends";
 import {
   PERSON_REACTION_SECONDS,
@@ -68,9 +72,10 @@ import {
   makeMoment,
   newBiography,
 } from "./biography";
-import { avatarLook, drawAvatar, drawEventItem, drawPerson, drawPet, drawRoom, drawStation, type AvatarFacing } from "./sprites";
+import { avatarLook, drawAvatar, drawCharacterNamePlate, drawEventItem, drawPerson, drawPet, drawRoom, drawStation, personLook, type AvatarFacing } from "./sprites";
 import {
   warmStorybookCharacterAtlases,
+  warmStorybookPortraits,
   warmStorybookSetupAtlases,
 } from "./storybook-characters";
 import { warmStorybookPetAtlases } from "./storybook-pets";
@@ -80,6 +85,7 @@ import {
   occupationHeritage,
   warmOccupationCharacterAtlases,
 } from "./occupation-characters";
+import { professionLifeOptions } from "./profession-npcs";
 import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
@@ -1246,6 +1252,9 @@ interface Friend {
   id: string;
   name: string;
   gender: Gender;
+  /** Optional on read so v5 saves made before friend portraits still migrate. */
+  heritage?: HeritageStyle;
+  appearance?: CharacterAppearanceId;
   ageOffset: number; // age relative to the player's, so a classmate stays your age
   iq: number;
   how: string;
@@ -1522,6 +1531,9 @@ export class Game {
     this.bindInput();
     window.addEventListener("resize", () => this.applyLayout());
     window.addEventListener("orientationchange", () => this.applyLayout());
+    window.addEventListener("plj:character-atlas-ready", () => {
+      if (this.mode === "friends") this.renderFriendFaces();
+    });
     void this.loadTrainingDatabase();
     this.showTitle();
     this.renderInventory();
@@ -1577,6 +1589,18 @@ export class Game {
       px: Math.round(this.px),
       py: Math.round(this.py),
       focus: this.focusIndex >= 0 ? this.stations[this.focusIndex]?.opt.id : null,
+      professionNpcs: this.stations
+        .filter((station) => station.opt.professionNpc)
+        .map((station) => ({
+          optionId: station.opt.id,
+          ...station.opt.professionNpc,
+        })),
+      friends: this.friends.map((friend) => ({
+        id: friend.id,
+        gender: friend.gender,
+        heritage: friend.heritage,
+        appearance: friend.appearance,
+      })),
       interaction: this.personReaction
         ? {
             target: this.personReaction.targetId,
@@ -2093,7 +2117,14 @@ export class Game {
       if (ch && ch.moments.length) return ch.moments.map((m) => this.sanitizeMoment(m));
       return []; // an authored life with nothing recorded for this chapter — a quiet time
     }
-    return this.withFamilyPresence(s.options.filter((o) => this.optionAvailable(o)), s);
+    const base = this.withFamilyPresence(
+      s.options.filter((o) => this.optionAvailable(o)),
+      s
+    );
+    return [
+      ...base,
+      ...professionLifeOptions(this.lifeSeed, s.id),
+    ];
   }
 
   /**
@@ -2167,6 +2198,12 @@ export class Game {
       const zoneIndex = counts[zone]++;
       const zoneTotal = totals[zone];
       const rows = this.zoneRows(zone);
+      const peerIdentity =
+        c.kind === "person" &&
+        opt.person &&
+        isSameStagePeerKind(opt.person)
+          ? peerVisualIdentity(this.lifeSeed, opt.person)
+          : null;
       return {
         x: zoneTotal === 1 ? (xStart + xEnd) / 2 : xStart + ((xEnd - xStart) * zoneIndex) / (zoneTotal - 1),
         y: rows[zoneIndex % rows.length],
@@ -2175,11 +2212,14 @@ export class Game {
         zone,
         appearance:
           c.kind === "person"
-            ? this.appearanceForNpc(opt)
+            ? peerIdentity?.appearance ??
+              this.appearanceForNpc(opt)
             : undefined,
         heritage:
           c.kind === "person"
-            ? this.heritageForNpc(opt)
+            ? opt.professionNpc?.heritage ??
+              peerIdentity?.heritage ??
+              this.heritageForNpc(opt)
             : undefined,
         guard: c.guard,
         contactCd: 0,
@@ -2187,6 +2227,28 @@ export class Game {
       } as Station;
     });
     this.people = this.stations.filter((s) => s.kind === "person");
+    const portraitLooks = this.people
+      .filter((station) => !station.opt.professionNpc)
+      .map((station) =>
+        personLook(
+          station.opt.person!,
+          this.gender,
+          this.stageIndex,
+          station.heritage ?? this.heritage,
+          station.appearance ??
+            this.appearanceForNpc(station.opt)
+        )
+      );
+    void warmStorybookPortraits(portraitLooks);
+    for (const station of this.people) {
+      const profession = station.opt.professionNpc;
+      if (!profession) continue;
+      void warmOccupationCharacterAtlases(
+        profession.heritage,
+        profession.gender,
+        profession.uniform
+      );
+    }
   }
 
   private stationZone(opt: LifeOption): StationZone {
@@ -3436,7 +3498,7 @@ export class Game {
     this.investments = snap.investments;
     this.market = snap.market ? { ...snap.market } : { stock: 100, gold: 100, property: 100 };
     this.holdings = snap.holdings ? { ...snap.holdings } : { stock: 0, gold: 0, property: 0 };
-    this.friends = (snap.friends ?? []).map((f) => ({ ...f }));
+    this.friends = this.normalizeFriends(snap.friends ?? []);
     this.friendNextId = snap.friendNextId ?? this.friends.length;
     this.moneyWise = snap.moneyWise;
     this.iqCeiling = snap.iqCeiling;
@@ -4298,15 +4360,57 @@ export class Game {
         if (st.kind === "event" && st.event) {
           drawEventItem(ctx, st.x, st.y, st.event.id, st.event.emoji, st.event.title, st.event.good !== false, focused, t);
         } else if (st.opt.person) {
-          drawPerson(ctx, st.x, st.y, st.opt.person, this.gender, st.opt.label, focused, used, t, this.stageIndex, st.heritage ?? this.heritage, {
-            seated: this.shouldSitWithNewborn(st),
-            appearance:
-              st.appearance ?? this.appearanceForNpc(st.opt),
-            expression:
-              activeReaction?.target === st
-                ? activeReaction.expressions.npc
-                : "neutral",
-          });
+          const profession = st.opt.professionNpc;
+          let drewProfession = false;
+          if (profession) {
+            ctx.save();
+            if (used) ctx.globalAlpha = 0.5;
+            drewProfession = drawOccupationCharacter(
+              ctx,
+              st.x,
+              st.y,
+              profession.uniform,
+              profession.heritage,
+              profession.gender,
+              { size: 142, facing: "front", moving: false }
+            );
+            ctx.restore();
+            if (drewProfession) {
+              drawCharacterNamePlate(
+                ctx,
+                st.x,
+                st.y,
+                140,
+                st.opt.label,
+                focused,
+                used,
+                t
+              );
+              if (activeReaction?.target === st) {
+                ctx.font = "16px system-ui, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(
+                  activeReaction.expressions.npc === "smile"
+                    ? "😊"
+                    : "💬",
+                  st.x + 34,
+                  st.y - 104
+                );
+              }
+            }
+          }
+          if (!drewProfession) {
+            drawPerson(ctx, st.x, st.y, st.opt.person, this.gender, st.opt.label, focused, used, t, this.stageIndex, st.heritage ?? this.heritage, {
+              seated: this.shouldSitWithNewborn(st),
+              appearance:
+                st.appearance ?? this.appearanceForNpc(st.opt),
+              expression:
+                activeReaction?.target === st
+                  ? activeReaction.expressions.npc
+                  : "neutral",
+            });
+          }
         } else {
           drawStation(ctx, st.x, st.y, st.opt.icon, st.opt.label, st.opt.category, focused, used, t);
         }
@@ -5494,7 +5598,33 @@ export class Game {
 
   /** Generate one friend that fits the moment: age near yours, plausible IQ. */
   private makeFriend(spec: { how: string; iqBias?: number; ageSpread?: number }): Friend {
-    const gender: Gender = Math.random() < 0.5 ? "male" : "female";
+    const ordinal = this.friendNextId++;
+    const gender = friendGenderForOrdinal(
+      this.lifeSeed,
+      ordinal
+    );
+    const ordinalWithinGender = this.friends.filter(
+      (friend) => friend.gender === gender
+    ).length;
+    const usedVisualKeys = this.friends
+      .filter(
+        (friend) =>
+          friend.gender === gender &&
+          friend.heritage &&
+          friend.appearance
+      )
+      .map((friend) =>
+        friendVisualKey({
+          heritage: friend.heritage!,
+          appearance: friend.appearance!,
+        })
+      );
+    const identity = nextFriendVisualIdentity(
+      this.lifeSeed,
+      gender,
+      usedVisualKeys,
+      ordinalWithinGender
+    );
     const firsts = gender === "female" ? FRIEND_FIRST_F : FRIEND_FIRST_M;
     const first = firsts[Math.floor(Math.random() * firsts.length)];
     const last = FRIEND_LAST[Math.floor(Math.random() * FRIEND_LAST.length)];
@@ -5503,7 +5633,18 @@ export class Game {
     const iq = Math.max(70, Math.min(145, Math.round(gaussian(100, 12) + (spec.iqBias ?? 0))));
     const bond = Math.max(8, Math.min(96, Math.round((FRIEND_BOND_BASE[spec.how] ?? 44) + (Math.random() * 16 - 8))));
     const vibe = FRIEND_VIBES[Math.floor(Math.random() * FRIEND_VIBES.length)];
-    return { id: "fr" + this.friendNextId++, name: `${first} ${last}`, gender, ageOffset, iq, how: spec.how, since: STAGES[this.stageIndex]?.name ?? "school", bond, vibe };
+    return {
+      id: "fr" + ordinal,
+      name: `${first} ${last}`,
+      gender,
+      ...identity,
+      ageOffset,
+      iq,
+      how: spec.how,
+      since: STAGES[this.stageIndex]?.name ?? "school",
+      bond,
+      vibe,
+    };
   }
 
   /** On entering a new chapter (elementary onward), add that stage's new friends. */
@@ -5534,16 +5675,66 @@ export class Game {
     return { label: "drifting", cls: "is-far" };
   }
 
-  /** A face emoji for a friend that matches their gender + current age. */
-  private friendFace(f: Friend): string {
+  /** Storybook age band for a friend who grows alongside the player. */
+  private friendStageIndex(f: Friend): number {
     const age = friendAgeForStage(
       this.age,
       this.stageIndex,
       f.ageOffset
     );
-    if (age < 3) return "👶";
-    if (f.gender === "female") return age < 18 ? "👧" : age < 62 ? "👩" : "👵";
-    return age < 18 ? "👦" : age < 62 ? "👨" : "👴";
+    const index = STAGES.findIndex(
+      (stage) =>
+        age >= stage.ageStart && age < stage.ageEnd
+    );
+    return index >= 0 ? index : STAGES.length - 1;
+  }
+
+  /** Paint each saved identity as a real, age-correct storybook portrait. */
+  private renderFriendFaces(): void {
+    const canvases = Array.from(
+      this.ui.overlay.querySelectorAll<HTMLCanvasElement>(
+        "canvas[data-friend-id]"
+      )
+    );
+    const looks = canvases.flatMap((canvas) => {
+      const friend = this.friends.find(
+        (candidate) =>
+          candidate.id === canvas.dataset.friendId
+      );
+      if (!friend) return [];
+      const heritage = friend.heritage ?? this.heritage;
+      const appearance =
+        friend.appearance ?? "classic";
+      return [
+        {
+          canvas,
+          look: {
+            ...avatarLook(
+              this.friendStageIndex(friend),
+              friend.gender,
+              heritage,
+              appearance
+            ),
+            heightPx: 72,
+          },
+        },
+      ];
+    });
+    void warmStorybookPortraits(
+      looks.map(({ look }) => look)
+    );
+    for (const { canvas, look } of looks) {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      drawAvatar(ctx, canvas.width / 2, canvas.height - 4, look, 0, {
+        moving: false,
+        facing: "front",
+        verticalBias: 0,
+      });
+    }
   }
 
   private showFriends(): void {
@@ -5553,6 +5744,7 @@ export class Game {
       return;
     }
     this.mode = "friends";
+    this.friends = this.normalizeFriends(this.friends);
     const list = this.friends.length
       ? this.friends.map((f) => {
           const age = friendAgeForStage(
@@ -5563,7 +5755,7 @@ export class Game {
           const t = this.bondTier(f.bond);
           return `
         <div class="plj-friend-row">
-          <span class="plj-friend-face">${this.friendFace(f)}</span>
+          <canvas class="plj-friend-face" width="72" height="92" data-friend-id="${esc(f.id)}" role="img" aria-label="${esc(f.name)}"></canvas>
           <span class="plj-friend-main"><b>${esc(f.name)}</b><small>${esc(f.vibe)} ${esc(f.how)} · ${age}y · 🧠 ${f.iq} · since ${esc(f.since)}</small></span>
           <span class="plj-friend-bond ${t.cls}"><b>💛 ${f.bond}</b><small>${t.label}</small></span>
         </div>`;
@@ -5586,6 +5778,7 @@ export class Game {
         </div>
       </div>`;
     this.ui.overlay.classList.add("show");
+    this.renderFriendFaces();
     const ov = this.ui.overlay;
     ov.querySelector<HTMLButtonElement>("#plj-friends-close")!.onclick = () => { this.mode = "playing"; this.clearOverlay(); };
     ov.querySelector<HTMLButtonElement>("#plj-friends-tree")!.onclick = () => { this.mode = "playing"; this.clearOverlay(); this.showFamilyTree(); };
@@ -5955,6 +6148,12 @@ export class Game {
 
   /** Assign one full identity per NPC and keep it stable for the whole life. */
   private appearanceForNpc(opt: LifeOption): CharacterAppearanceId {
+    if (opt.person && isSameStagePeerKind(opt.person)) {
+      return peerVisualIdentity(
+        this.lifeSeed,
+        opt.person
+      ).appearance;
+    }
     // The opening family always demonstrates both looks, independent of luck.
     if (opt.person === "mother" || opt.person === "grandpa") {
       return "alternate";
@@ -5976,7 +6175,25 @@ export class Game {
     if (!opt.person || !isSameStagePeerKind(opt.person)) {
       return this.heritage;
     }
-    return peerHeritage(this.lifeSeed, opt.person);
+    return peerVisualIdentity(
+      this.lifeSeed,
+      opt.person
+    ).heritage;
+  }
+
+  /** Add reviewed portrait identities to legacy friends without changing gender. */
+  private normalizeFriends(friends: readonly Friend[]): Friend[] {
+    const safe = friends.map((friend) => ({
+      ...friend,
+      gender:
+        friend.gender === "female"
+          ? "female" as const
+          : "male" as const,
+    }));
+    return normalizeFriendVisualIdentities(
+      this.lifeSeed,
+      safe
+    );
   }
 
   /**

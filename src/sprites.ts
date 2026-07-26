@@ -3181,6 +3181,48 @@ export interface PersonDrawOptions {
   expression?: CharacterExpression;
 }
 
+/** Shared focus ring and readable name plate for generic and uniformed people. */
+export function drawCharacterNamePlate(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  footY: number,
+  visualHeight: number,
+  label: string,
+  focused: boolean,
+  used: boolean,
+  t: number,
+  color = "rgba(255,255,255,0.9)"
+): void {
+  if (focused) {
+    ctx.fillStyle = `rgba(255,235,170,${0.2 + 0.12 * Math.sin(t * 6)})`;
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      footY + 1,
+      visualHeight * 0.28,
+      5,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+  const labelY = Math.max(14, footY - visualHeight - 10);
+  drawNamePlate(
+    ctx,
+    cx,
+    labelY,
+    label,
+    focused ? "#ffe9a8" : color
+  );
+  if (used) {
+    ctx.fillStyle = "#3ddc84";
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("♥", cx, Math.max(22, labelY + 8));
+  }
+}
+
 export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: number, kind: PersonKind, playerGender: Gender, label: string, focused: boolean, used: boolean, t: number, stageIndex?: number, heritage: HeritageStyle = "western", options: PersonDrawOptions = {}): void {
   const look = personLook(
     kind,
@@ -3210,37 +3252,23 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
   const role = npcRoleStyle(kind);
   drawNpcRoleCue(ctx, cx, footY, look, role.cue, t);
   const name = label || PERSON_LABEL[kind];
-  if (focused) {
-    ctx.fillStyle = `rgba(255,235,170,${0.2 + 0.12 * Math.sin(t * 6)})`;
-    ctx.beginPath();
-    ctx.ellipse(cx, footY + 1, look.heightPx * 0.32, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const labelY = Math.max(
-    14,
-    footY -
-      storybookVisualHeight(look) * (seated ? 0.78 : 1) -
-      10
-  );
   const roleColor =
     role.disposition === "hostile"
       ? "#ff9aa8"
       : role.disposition === "risky"
         ? "#ffd078"
         : "rgba(255,255,255,0.9)";
-  drawNamePlate(
+  drawCharacterNamePlate(
     ctx,
     cx,
-    labelY,
+    footY,
+    storybookVisualHeight(look) * (seated ? 0.78 : 1),
     name,
-    focused ? "#ffe9a8" : roleColor
+    focused,
+    used,
+    t,
+    roleColor
   );
-  if (used) {
-    ctx.fillStyle = "#3ddc84";
-    ctx.font = "bold 13px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("♥", cx, Math.max(22, labelY + 8));
-  }
 }
 
 function drawNamePlate(ctx: CanvasRenderingContext2D, cx: number, y: number, text: string, color: string): void {
@@ -3519,7 +3547,7 @@ function drawSocialArea(ctx: CanvasRenderingContext2D, W: number, top: number, b
       drawSchoolOutdoorArea(ctx, W, top, bottom, t, true);
       return;
     case "officeIndoor":
-      drawOfficeIndoorArea(ctx, W, top, bottom);
+      drawOfficeIndoorArea(ctx, W, top, bottom, t);
       return;
     case "officeOutdoor":
       drawOfficeOutdoorArea(ctx, W, top, bottom, t);
@@ -4115,7 +4143,7 @@ function drawSchoolOutdoorArea(ctx: CanvasRenderingContext2D, W: number, top: nu
   for (let x = 48; x < 244; x += 38) px(ctx, x, bottom - 52, 22, 4, "rgba(255,255,255,0.58)");
 }
 
-function drawOfficeIndoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number): void {
+function drawOfficeIndoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number): void {
   const wallBottom = Math.round(top + Math.min(136, Math.max(96, (bottom - top) * 0.34)));
   const wall = ctx.createLinearGradient(0, top, 0, wallBottom);
   wall.addColorStop(0, "#a5dfcf");
@@ -4143,10 +4171,42 @@ function drawOfficeIndoorArea(ctx: CanvasRenderingContext2D, W: number, top: num
     const deskX = 76 + i * 168;
     px(ctx, deskX, bottom - 88, 112, 24, "#8b6a4a");
     px(ctx, deskX + 30, bottom - 118, 46, 30, "#232635");
-    px(ctx, deskX + 35, bottom - 113, 36, 20, "#6cd7ff");
+    const screenX = deskX + 35;
+    const screenY = bottom - 113;
+    px(ctx, screenX, screenY, 36, 20, "#183b56");
+    // Tiny moving dashboards make the established office feel occupied without
+    // changing its layout or introducing perspective-heavy scenery.
+    for (let bar = 0; bar < 4; bar++) {
+      const barHeight =
+        3 +
+        ((bar * 5 + i * 4 + Math.floor(t * 1.4)) % 11);
+      px(
+        ctx,
+        screenX + 4 + bar * 7,
+        screenY + 17 - barHeight,
+        4,
+        barHeight,
+        bar % 2 ? "#7cf0cf" : "#6cd7ff"
+      );
+    }
+    px(
+      ctx,
+      screenX + 3 + ((t * 8 + i * 9) % 28),
+      screenY + 2,
+      5,
+      2,
+      "rgba(255,255,255,0.72)"
+    );
+    ellipse(ctx, deskX + 92, bottom - 94, 5, 4, "#f4eee0");
+    px(ctx, deskX + 96, bottom - 96, 3, 5, "#d8c8ad");
     px(ctx, deskX + 16, bottom - 64, 8, 36, "#624a35");
     px(ctx, deskX + 88, bottom - 64, 8, 36, "#624a35");
   }
+  // One small plant softens the office while remaining safely behind the lane.
+  px(ctx, W - 45, wallBottom - 30, 7, 25, "#517052");
+  ellipse(ctx, W - 49, wallBottom - 35, 10, 7, "#4fb676");
+  ellipse(ctx, W - 37, wallBottom - 42, 9, 8, "#68c987");
+  px(ctx, W - 57, wallBottom - 9, 26, 9, "#c98255");
 }
 
 function drawOfficeOutdoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number): void {
@@ -4255,7 +4315,12 @@ function drawFamilyArea(ctx: CanvasRenderingContext2D, scene: SceneKind, theme: 
         const deskX = W - 240 + i * 74;
         px(ctx, deskX, wallBottom - 24, 58, 18, "#8b6a4a");
         px(ctx, deskX + 15, wallBottom - 44, 28, 18, "#222");
-        px(ctx, deskX + 18, wallBottom - 41, 22, 12, "#5fd0ff");
+        px(ctx, deskX + 18, wallBottom - 41, 22, 12, "#183b56");
+        const activity =
+          3 + ((i * 4 + Math.floor(t * 1.5)) % 8);
+        px(ctx, deskX + 21, wallBottom - 31 - activity, 4, activity, "#6cd7ff");
+        px(ctx, deskX + 28, wallBottom - 35, 4, 6, "#7cf0cf");
+        px(ctx, deskX + 35, wallBottom - 38, 3, 9, "#ffd36e");
       }
       break;
     }
@@ -4264,7 +4329,12 @@ function drawFamilyArea(ctx: CanvasRenderingContext2D, scene: SceneKind, theme: 
       px(ctx, W - 218, wallBottom - 34, 132, 26, "#9a5a6a");
       px(ctx, W - 218, wallBottom - 46, 132, 14, "#b06a7a");
       px(ctx, 100, top + 30, 72, 36, "#1c1c24");
-      px(ctx, 104, top + 34, 64, 28, "#3a4a6a");
+      px(ctx, 104, top + 34, 64, 28, "#263f62");
+      const tvShift = (t * 10) % 54;
+      px(ctx, 108 + tvShift, top + 38, 7, 3, "#ffd36e");
+      px(ctx, 110, top + 52, 16, 6, "#65c98a");
+      px(ctx, 128, top + 46, 12, 12, "#f08a68");
+      px(ctx, 142, top + 50, 20, 8, "#73b9e8");
       break;
     }
     case "sunset": {

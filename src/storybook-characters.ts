@@ -660,6 +660,35 @@ export async function warmStorybookCharacterAtlases(
   ]);
 }
 
+/**
+ * Decode only the exact neutral atlas families needed by visible NPC or friend
+ * portraits. This avoids downloading every motion sheet for every heritage.
+ */
+export async function warmStorybookPortraits(
+  looks: readonly CuteCharacterLook[]
+): Promise<boolean> {
+  if (typeof Image === "undefined") return true;
+  const states = new Map<string, AtlasState>();
+  for (const look of looks) {
+    const frame = storybookFrameForLook(look, "front");
+    const key = `${frame.atlasFamily}:${look.heritage}:${look.gender}`;
+    if (states.has(key)) continue;
+    const state = atlasStateFor(
+      frame.atlasFamily,
+      look.heritage,
+      look.gender,
+      true
+    );
+    if (state) states.set(key, state);
+  }
+  await Promise.all(
+    [...states.values()].map((state) => state.readyPromise)
+  );
+  return [...states.values()].every(
+    (state) => state.ready && !state.failed
+  );
+}
+
 function drawGroundShadow(
   ctx: CanvasRenderingContext2D,
   cx: number,
