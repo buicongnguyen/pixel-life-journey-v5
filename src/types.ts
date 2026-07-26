@@ -26,7 +26,20 @@ export type JobUniform =
   | "trainer"
   | "dancer"
   | "soldier"
-  | "farmer";
+  | "farmer"
+  | "teacher"
+  | "chef"
+  | "barista"
+  | "athlete"
+  | "entrepreneur"
+  | "generalengineer"
+  | "softwareengineer"
+  | "manager"
+  | "analyst"
+  | "artist"
+  | "police"
+  | "lawyer"
+  | "ceo";
 
 /**
  * A reviewed, explicitly gendered profession character that can appear as an

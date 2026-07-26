@@ -17,6 +17,12 @@ const occupation = (id: string): Occupation => {
   return found;
 };
 
+const unillustratedOccupation = (): Occupation => ({
+  ...occupation("artist"),
+  id: "future-unillustrated",
+  uniform: undefined,
+});
+
 const at = (
   job: Occupation | null,
   stageId: string,
@@ -83,59 +89,33 @@ describe("player body variant selection", () => {
     }
   });
 
-  it("allows only named casual unillustrated jobs in Career summer", () => {
-    const eligible = [
-      "artist",
-      "entrepreneur",
-      "jrdev",
-      "engineer",
-      "staffeng",
-    ];
-    for (const job of OCCUPATIONS.filter((candidate) => !candidate.uniform)) {
+  it("routes every catalog job through reviewed workwear in Career summer", () => {
+    for (const job of OCCUPATIONS) {
       expect(at(job, "career", 24).kind).toBe(
-        eligible.includes(job.id)
-          ? "summer-casual"
-          : "standard"
+        "career-uniform"
       );
     }
   });
 
-  it("allows every unillustrated job off duty in Marriage and Middle Age", () => {
-    const unillustrated = OCCUPATIONS.filter((job) => !job.uniform);
-    for (const job of unillustrated) {
-      expect(at(job, "marriage", 31.5)).toEqual({
-        kind: "summer-casual",
-        season: "summer",
-      });
-      expect(at(job, "midlife", 40.75)).toEqual({
-        kind: "summer-casual",
-        season: "summer",
-      });
-    }
+  it("keeps a safe generic summer path for a future unillustrated job", () => {
+    const job = unillustratedOccupation();
+    expect(at(job, "marriage", 31.5)).toEqual({
+      kind: "summer-casual",
+      season: "summer",
+    });
+    expect(at(job, "midlife", 40.75)).toEqual({
+      kind: "summer-casual",
+      season: "summer",
+    });
   });
 
-  it("selects summer casual only during the summer quarter", () => {
+  it("does not replace an illustrated job with generic summer casual", () => {
     const artist = occupation("artist");
-    expect(at(artist, "career", 22)).toEqual({
-      kind: "standard",
-      season: "spring",
-    });
-    expect(at(artist, "career", 24)).toEqual({
-      kind: "summer-casual",
-      season: "summer",
-    });
-    expect(at(artist, "career", 26)).toEqual({
-      kind: "summer-casual",
-      season: "summer",
-    });
-    expect(at(artist, "career", 26.000001)).toEqual({
-      kind: "standard",
-      season: "autumn",
-    });
-    expect(at(artist, "career", 28)).toEqual({
-      kind: "standard",
-      season: "winter",
-    });
+    for (const age of [22, 24, 26, 26.000001, 28]) {
+      expect(at(artist, "career", age).kind).toBe(
+        "career-uniform"
+      );
+    }
   });
 
   it("uses the standard body through University and after Middle Age", () => {

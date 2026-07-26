@@ -33,6 +33,11 @@ export type ProfessionVisualIdentity = Pick<
   "uniform" | "gender" | "heritage"
 >;
 
+export type ReservedProfessionVisuals =
+  | ProfessionVisualIdentity
+  | readonly ProfessionVisualIdentity[]
+  | ReadonlySet<ProfessionVisualIdentity>;
+
 export function sameProfessionVisual(
   left: ProfessionVisualIdentity,
   right: ProfessionVisualIdentity
@@ -97,6 +102,110 @@ export const PROFESSION_ROLES: readonly ProfessionRole[] = [
     desc: "Meet a farmer who works with the seasons and grows food for the community.",
     effects: { health: 4, happiness: 3, fun: 2 },
   },
+  {
+    id: "teacher",
+    label: "Teacher",
+    icon: "📚",
+    uniform: "teacher",
+    desc: "Talk with a teacher who helps every student find a way to learn.",
+    effects: { smarts: 4, happiness: 3 },
+  },
+  {
+    id: "chef",
+    label: "Chef",
+    icon: "🍳",
+    uniform: "chef",
+    desc: "Meet a chef who turns careful preparation into food people remember.",
+    effects: { happiness: 3, fun: 3, health: 2 },
+  },
+  {
+    id: "barista",
+    label: "Barista",
+    icon: "☕",
+    uniform: "barista",
+    desc: "Chat with a barista who knows the craft, pace, and people behind a welcoming café.",
+    effects: { happiness: 3, fun: 3 },
+  },
+  {
+    id: "athlete",
+    label: "Athlete",
+    icon: "🏅",
+    uniform: "athlete",
+    desc: "Meet an athlete who builds performance through patient training and recovery.",
+    effects: { health: 6, fun: 3 },
+  },
+  {
+    id: "entrepreneur",
+    label: "Entrepreneur",
+    icon: "🚀",
+    uniform: "entrepreneur",
+    desc: "Talk with an entrepreneur about turning an idea into a responsible business.",
+    effects: { smarts: 3, happiness: 2, fun: 2 },
+  },
+  {
+    id: "generalengineer",
+    label: "Engineer",
+    icon: "⚙️",
+    uniform: "generalengineer",
+    desc: "Meet an engineer who designs practical systems and solves physical-world problems.",
+    effects: { smarts: 5, happiness: 1 },
+  },
+  {
+    id: "softwareengineer",
+    label: "Software Engineer",
+    icon: "💻",
+    uniform: "softwareengineer",
+    desc: "Meet a software engineer who turns careful reasoning into useful digital tools.",
+    effects: { smarts: 5, fun: 2 },
+  },
+  {
+    id: "manager",
+    label: "Manager",
+    icon: "📈",
+    uniform: "manager",
+    desc: "Talk with a manager who helps a team coordinate, improve, and do its best work.",
+    effects: { happiness: 2, smarts: 3 },
+  },
+  {
+    id: "analyst",
+    label: "Financial Analyst",
+    icon: "📊",
+    uniform: "analyst",
+    desc: "Meet a financial analyst who studies evidence before making a recommendation.",
+    effects: { smarts: 5, happiness: 1 },
+  },
+  {
+    id: "artist",
+    label: "Artist",
+    icon: "🎨",
+    uniform: "artist",
+    desc: "Talk with an artist who makes a living through observation, practice, and imagination.",
+    effects: { happiness: 4, fun: 5 },
+  },
+  {
+    id: "police",
+    label: "Police Officer",
+    icon: "🛡️",
+    uniform: "police",
+    desc: "Meet a police officer who serves the community through calm judgment and responsibility.",
+    effects: { health: 3, smarts: 2, happiness: 1 },
+  },
+  {
+    id: "lawyer",
+    label: "Lawyer",
+    icon: "⚖️",
+    uniform: "lawyer",
+    desc: "Talk with a lawyer who prepares carefully and advocates clearly for other people.",
+    effects: { smarts: 5, happiness: 1 },
+  },
+  {
+    id: "ceo",
+    label: "CEO",
+    icon: "👔",
+    uniform: "ceo",
+    desc: "Meet a CEO who balances long-term direction with responsibility for a whole organization.",
+    effects: { smarts: 4, happiness: 2 },
+  },
 ] as const;
 
 export const PROFESSION_NPC_STAGE_IDS = [
@@ -132,15 +241,34 @@ export function stageHasProfessionNpcs(stageId: string): boolean {
   return PROFESSION_NPC_STAGES.has(stageId);
 }
 
+function visualKey(visual: ProfessionVisualIdentity): string {
+  return `${visual.uniform}:${visual.gender}:${visual.heritage}`;
+}
+
+function reservedVisualList(
+  reserved:
+    | ReservedProfessionVisuals
+    | undefined
+): readonly ProfessionVisualIdentity[] {
+  if (!reserved) return [];
+  if (Array.isArray(reserved)) return reserved;
+  if (reserved instanceof Set) return [...reserved];
+  return [reserved as ProfessionVisualIdentity];
+}
+
 /**
  * Pick a stable random-looking adult cast. Rebuilding the room, rotating the
  * device, saving, or rewinding cannot change the people for that life chapter.
+ * A single reserved player identity remains accepted for compatibility; a
+ * readonly array/set can additionally reserve both parents. If all four
+ * gender/heritage bodies for a uniform are reserved, that role is skipped
+ * rather than returning a pixel-identical person.
  */
 export function professionNpcsForStage(
   lifeSeed: string,
   stageId: string,
   count = 3,
-  reservedVisual?: ProfessionVisualIdentity
+  reservedVisuals?: ReservedProfessionVisuals
 ): ProfessionNpc[] {
   if (!stageHasProfessionNpcs(stageId) || count <= 0) return [];
   const ordered = [...PROFESSION_ROLES].sort((a, b) => {
@@ -152,30 +280,22 @@ export function professionNpcsForStage(
     );
     return aRank - bRank || a.id.localeCompare(b.id);
   });
-  const selected = ordered.slice(
-    0,
-    Math.min(Math.floor(count), ordered.length)
+  const requestedCount = Math.min(
+    Math.floor(count),
+    ordered.length
   );
   const firstGender =
     stableHash(`${lifeSeed}:${stageId}:profession-gender`) % 2;
   const firstHeritage =
     stableHash(`${lifeSeed}:${stageId}:profession-heritage`) % 2;
-  const visualKey = (
-    visual: ProfessionVisualIdentity
-  ): string =>
-    `${visual.uniform}:${visual.gender}:${visual.heritage}`;
   const usedVisuals = new Set<string>(
-    reservedVisual ? [visualKey(reservedVisual)] : []
+    reservedVisualList(reservedVisuals).map(visualKey)
   );
+  const selected: ProfessionNpc[] = [];
 
-  return selected.map((role, index) => {
-    let gender =
-      PROFESSION_GENDERS[(firstGender + index) % 2];
-    let heritage =
-      PROFESSION_HERITAGES[(firstHeritage + index) % 2];
-    // Doctor and nurse intentionally share reviewed medical art. When both are
-    // selected, choose a different explicit gender/heritage sheet so they can
-    // never become pixel-identical people.
+  for (const role of ordered) {
+    if (selected.length >= requestedCount) break;
+    const index = selected.length;
     for (let variant = 0; variant < 4; variant += 1) {
       const candidateGender =
         PROFESSION_GENDERS[
@@ -188,31 +308,31 @@ export function professionNpcsForStage(
       const candidateVisualKey =
         `${role.uniform}:${candidateGender}:${candidateHeritage}`;
       if (!usedVisuals.has(candidateVisualKey)) {
-        gender = candidateGender;
-        heritage = candidateHeritage;
         usedVisuals.add(candidateVisualKey);
+        selected.push({
+          ...role,
+          gender: candidateGender,
+          heritage: candidateHeritage,
+        });
         break;
       }
     }
-    return {
-      ...role,
-      gender,
-      heritage,
-    };
-  });
+  }
+
+  return selected;
 }
 
 export function professionLifeOptions(
   lifeSeed: string,
   stageId: string,
   count = 3,
-  reservedVisual?: ProfessionVisualIdentity
+  reservedVisuals?: ReservedProfessionVisuals
 ): LifeOption[] {
   return professionNpcsForStage(
     lifeSeed,
     stageId,
     count,
-    reservedVisual
+    reservedVisuals
   ).map((profession) => ({
       id: `profession-${stageId}-${profession.id}`,
       label: profession.label,

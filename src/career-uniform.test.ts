@@ -4,6 +4,7 @@ import {
   playerCareerUniform,
 } from "./career-uniform";
 import { OCCUPATIONS } from "./occupations";
+import type { Occupation } from "./types";
 
 describe("selected player career uniform", () => {
   const doctor = OCCUPATIONS.find(
@@ -12,6 +13,11 @@ describe("selected player career uniform", () => {
   const artist = OCCUPATIONS.find(
     (occupation) => occupation.id === "artist"
   )!;
+  const unillustrated: Occupation = {
+    ...artist,
+    id: "future-unillustrated",
+    uniform: undefined,
+  };
 
   it("is active from Career through Middle Age, inclusive", () => {
     expect(PLAYER_CAREER_UNIFORM_STAGE_IDS).toEqual([
@@ -57,16 +63,7 @@ describe("selected player career uniform", () => {
     const reviewed = OCCUPATIONS.filter(
       (occupation) => occupation.uniform
     );
-    expect(
-      reviewed.map((occupation) => occupation.id).sort()
-    ).toEqual([
-      "dancer",
-      "doctor",
-      "farmer",
-      "nurse",
-      "soldier",
-      "trainer",
-    ]);
+    expect(reviewed).toHaveLength(OCCUPATIONS.length);
 
     for (const occupation of reviewed) {
       for (const gender of ["male", "female"] as const) {
@@ -94,7 +91,7 @@ describe("selected player career uniform", () => {
   it("keeps a normal avatar for careers without reviewed outfit art", () => {
     expect(
       playerCareerUniform(
-        artist,
+        unillustrated,
         "career",
         "female",
         "asian"
@@ -132,7 +129,7 @@ describe("selected player career uniform", () => {
     ).toBe("dancer");
     expect(
       playerCareerUniform(
-        artist,
+        unillustrated,
         "midlife",
         "female",
         "western"

@@ -186,9 +186,26 @@ export function cuteGeometry(look: CuteCharacterLook): CuteGeometry {
   const remainder = height - headHeight;
   const bodyHeight = remainder * (look.baby ? 0.38 : look.child ? 0.43 : 0.45);
   const legHeight = remainder - bodyHeight - height * 0.025;
-  const shoulderWidth = Math.max(headWidth * (look.child ? 0.76 : 0.84), height * 0.22);
-  const torsoWidth = shoulderWidth * (0.94 + look.chub * 0.06);
-  const hipWidth = torsoWidth * (look.skirt ? 1.02 : 0.91 + look.chub * 0.05);
+  const adult = !look.baby && !look.child;
+  const adultShoulderFactor =
+    look.gender === "male" ? 0.9 : 0.81;
+  const shoulderWidth = Math.max(
+    headWidth * (look.child ? 0.76 : adultShoulderFactor),
+    height * (adult && look.gender === "male" ? 0.235 : 0.22)
+  );
+  const torsoWidth =
+    shoulderWidth *
+    (adult && look.gender === "female" ? 0.96 : 0.94) *
+    (1 + look.chub * 0.06);
+  const hipWidth =
+    torsoWidth *
+    (look.skirt
+      ? adult && look.gender === "female"
+        ? 1.1
+        : 1.02
+      : adult && look.gender === "female"
+        ? 1.03 + look.chub * 0.05
+        : 0.9 + look.chub * 0.05);
   const limbWidth = height * (0.064 + look.chub * 0.009);
   const shoeWidth = height * (look.child ? 0.13 : 0.125);
   return {
@@ -658,7 +675,68 @@ function drawTorso(
   look: CuteCharacterLook,
   back = false
 ): void {
-  roundedRectPath(ctx, cx - width / 2, top, width, height, Math.min(width * 0.24, height * 0.2));
+  const adult = !look.baby && !look.child;
+  if (adult && look.gender === "female") {
+    // The deterministic fallback must keep the same adult gender separation as
+    // the reviewed raster art. A softly shaped chest and waist read as a
+    // healthy adult woman at gameplay scale without exaggerated anatomy.
+    ctx.beginPath();
+    ctx.moveTo(cx - width * 0.34, top);
+    ctx.quadraticCurveTo(
+      cx - width * 0.53,
+      top + height * 0.23,
+      cx - width * 0.48,
+      top + height * 0.43
+    );
+    ctx.quadraticCurveTo(
+      cx - width * 0.39,
+      top + height * 0.7,
+      cx - width * 0.43,
+      top + height
+    );
+    ctx.lineTo(cx + width * 0.43, top + height);
+    ctx.quadraticCurveTo(
+      cx + width * 0.39,
+      top + height * 0.7,
+      cx + width * 0.48,
+      top + height * 0.43
+    );
+    ctx.quadraticCurveTo(
+      cx + width * 0.53,
+      top + height * 0.23,
+      cx + width * 0.34,
+      top
+    );
+    ctx.closePath();
+  } else if (adult && look.gender === "male") {
+    ctx.beginPath();
+    ctx.moveTo(cx - width * 0.5, top + height * 0.04);
+    ctx.quadraticCurveTo(
+      cx - width * 0.48,
+      top,
+      cx - width * 0.4,
+      top
+    );
+    ctx.lineTo(cx + width * 0.4, top);
+    ctx.quadraticCurveTo(
+      cx + width * 0.48,
+      top,
+      cx + width * 0.5,
+      top + height * 0.04
+    );
+    ctx.lineTo(cx + width * 0.42, top + height);
+    ctx.lineTo(cx - width * 0.42, top + height);
+    ctx.closePath();
+  } else {
+    roundedRectPath(
+      ctx,
+      cx - width / 2,
+      top,
+      width,
+      height,
+      Math.min(width * 0.24, height * 0.2)
+    );
+  }
   fillStroke(ctx, look.shirt, 1.65);
   ctx.save();
   ctx.globalAlpha = 0.42;

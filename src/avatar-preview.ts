@@ -11,12 +11,12 @@ import {
   type PetFacing,
 } from "./storybook-pets";
 import {
-  drawOccupationCharacter,
-  OCCUPATION_HERITAGES,
-  OCCUPATION_UNIFORMS,
-  warmOccupationCharacterAtlases,
-  type OccupationFacing,
-} from "./occupation-characters";
+  drawJobCharacter,
+  isJobUniform,
+  jobUniformHasSummer,
+  warmJobCharacterAtlases,
+  type JobArtSeason,
+} from "./job-characters";
 import {
   drawSummerCharacter,
   SUMMER_GENDERS,
@@ -528,10 +528,76 @@ const occupationLabels: Record<JobUniform, string> = {
   dancer: "Professional dancer · adult",
   soldier: "Army soldier · adult",
   farmer: "Farmer · middle age",
+  teacher: "Teacher · adult",
+  chef: "Chef · adult",
+  barista: "Barista · adult",
+  athlete: "Athlete · adult",
+  entrepreneur: "Entrepreneur · adult",
+  generalengineer: "General engineer · adult",
+  softwareengineer: "Software engineer · adult",
+  manager: "Manager · adult",
+  analyst: "Financial analyst · adult",
+  artist: "Artist · adult",
+  police: "Police officer · adult",
+  lawyer: "Lawyer · adult",
+  ceo: "CEO · adult",
+};
+
+type OccupationPreviewFacing =
+  | "front"
+  | "left"
+  | "back"
+  | "right";
+type OccupationPreviewPack =
+  | "legacy"
+  | "service"
+  | "technical"
+  | "leadership";
+
+const occupationPreviewPacks: Record<
+  OccupationPreviewPack,
+  {
+    label: string;
+    uniforms: readonly JobUniform[];
+  }
+> = {
+  legacy: {
+    label: "Legacy professions",
+    uniforms: [
+      "doctor",
+      "trainer",
+      "dancer",
+      "soldier",
+      "farmer",
+    ],
+  },
+  service: {
+    label: "Service & creative",
+    uniforms: [
+      "teacher",
+      "chef",
+      "barista",
+      "athlete",
+      "artist",
+    ],
+  },
+  technical: {
+    label: "Technical & public service",
+    uniforms: [
+      "generalengineer",
+      "softwareengineer",
+      "police",
+      "entrepreneur",
+    ],
+  },
+  leadership: {
+    label: "Business & leadership",
+    uniforms: ["manager", "analyst", "lawyer", "ceo"],
+  },
 };
 
 const occupationIdentities: {
-  heritage: (typeof OCCUPATION_HERITAGES)[number];
+  heritage: Extract<HeritageStyle, "western" | "asian">;
   gender: Gender;
   label: string;
 }[] = [
@@ -543,15 +609,58 @@ const occupationIdentities: {
 
 function requestedOccupation(): JobUniform | null {
   const requested = searchParams.get("job");
-  return OCCUPATION_UNIFORMS.includes(
-    requested as (typeof OCCUPATION_UNIFORMS)[number]
-  )
-    ? (requested as JobUniform)
+  return requested && isJobUniform(requested)
+    ? requested
     : null;
 }
 
-function drawOccupationPreviewHeader(detail?: JobUniform): void {
-  ctx.fillStyle = "#7fd8ff";
+function requestedOccupationPack(): OccupationPreviewPack {
+  const requested = searchParams.get("pack");
+  return requested === "legacy" ||
+    requested === "service" ||
+    requested === "technical" ||
+    requested === "leadership"
+    ? requested
+    : "service";
+}
+
+function requestedOccupationSeason(): JobArtSeason {
+  return searchParams.get("season") === "summer"
+    ? "summer"
+    : "standard";
+}
+
+function effectiveOccupationSeason(
+  uniform: JobUniform
+): JobArtSeason {
+  const requested = requestedOccupationSeason();
+  return requested === "summer" &&
+    jobUniformHasSummer(uniform)
+    ? "summer"
+    : "standard";
+}
+
+function occupationPreviewSeason(
+  detail?: JobUniform
+): JobArtSeason {
+  if (detail) return effectiveOccupationSeason(detail);
+  const pack = occupationPreviewPacks[
+    requestedOccupationPack()
+  ];
+  return pack.uniforms.some(jobUniformHasSummer)
+    ? requestedOccupationSeason()
+    : "standard";
+}
+
+function drawOccupationPreviewHeader(
+  detail?: JobUniform
+): void {
+  const pack = occupationPreviewPacks[
+    requestedOccupationPack()
+  ];
+  const season = occupationPreviewSeason(detail);
+  ctx.fillStyle =
+    season === "summer" ? "#ffd07a" : "#7fd8ff";
   ctx.fillRect(0, 0, width, 92);
   ctx.fillStyle = "#172738";
   ctx.textAlign = "left";
@@ -559,8 +668,8 @@ function drawOccupationPreviewHeader(detail?: JobUniform): void {
   ctx.font = "bold 29px Arial";
   ctx.fillText(
     detail
-      ? `Occupation motion review · ${occupationLabels[detail]}`
-      : "Occupation cast · Asian and Western adults",
+      ? `Career outfit motion review · ${occupationLabels[detail]} · ${season}`
+      : `Career outfit cast · ${pack.label} · ${season}`,
     36,
     34
   );
@@ -568,7 +677,7 @@ function drawOccupationPreviewHeader(detail?: JobUniform): void {
   ctx.fillText(
     detail
       ? "Four neutral directions + four real walking poses · male and female remain separate"
-      : "Doctor, trainer, dancer, army, and farmer · front neutral + walking sample",
+      : `${pack.uniforms.length} reviewed jobs · Asian and Western adults · front neutral + walking sample`,
     36,
     68
   );
@@ -586,21 +695,25 @@ function renderOccupationOverview(now: number): void {
     label(identity.label, groupX + 12, 112);
   });
 
-  OCCUPATION_UNIFORMS.forEach((uniform, row) => {
+  const pack = occupationPreviewPacks[
+    requestedOccupationPack()
+  ];
+  pack.uniforms.forEach((uniform, row) => {
     const footY = rowTop + row * rowGap;
     label(occupationLabels[uniform], 30, footY - 76, "left");
     occupationIdentities.forEach((identity, identityIndex) => {
       const groupX = 300 + identityIndex * 350;
-      drawOccupationCharacter(
+      const season = effectiveOccupationSeason(uniform);
+      drawJobCharacter(
         ctx,
         groupX - 48,
         footY,
         uniform,
         identity.heritage,
         identity.gender,
-        { facing: "front", size: 132 }
+        { facing: "front", size: 132, season }
       );
-      drawOccupationCharacter(
+      drawJobCharacter(
         ctx,
         groupX + 72,
         footY,
@@ -612,6 +725,7 @@ function renderOccupationOverview(now: number): void {
           moving: true,
           phase: now / 170,
           size: 132,
+          season,
         }
       );
     });
@@ -625,7 +739,7 @@ function renderOccupationDetail(
   ctx.fillStyle = "#26384a";
   ctx.fillRect(0, 0, width, height);
   drawOccupationPreviewHeader(uniform);
-  const facings: OccupationFacing[] = [
+  const facings: OccupationPreviewFacing[] = [
     "front",
     "left",
     "back",
@@ -644,6 +758,7 @@ function renderOccupationDetail(
     "back step",
     "right step",
   ];
+  const season = effectiveOccupationSeason(uniform);
   topLabels.forEach((text, column) => {
     label(text, columnX[column], 118);
   });
@@ -652,16 +767,16 @@ function renderOccupationDetail(
     const footY = 300 + row * 210;
     lane(footY, identity.label);
     facings.forEach((facing, column) => {
-      drawOccupationCharacter(
+      drawJobCharacter(
         ctx,
         columnX[column],
         footY,
         uniform,
         identity.heritage,
         identity.gender,
-        { facing, size: 148 }
+        { facing, size: 148, season }
       );
-      drawOccupationCharacter(
+      drawJobCharacter(
         ctx,
         columnX[column + 4],
         footY,
@@ -673,6 +788,7 @@ function renderOccupationDetail(
           moving: true,
           phase: 1,
           size: 148,
+          season,
         }
       );
     });
@@ -683,6 +799,27 @@ function renderOccupations(now: number): void {
   const detail = requestedOccupation();
   if (detail) renderOccupationDetail(now, detail);
   else renderOccupationOverview(now);
+}
+
+async function warmRequestedOccupationPreview(): Promise<
+  boolean
+> {
+  const detail = requestedOccupation();
+  const uniforms = detail
+    ? [detail]
+    : occupationPreviewPacks[requestedOccupationPack()]
+        .uniforms;
+  const ready = await Promise.all(
+    uniforms.map((uniform) =>
+      warmJobCharacterAtlases(
+        undefined,
+        undefined,
+        uniform,
+        effectiveOccupationSeason(uniform)
+      )
+    )
+  );
+  return ready.every(Boolean);
 }
 
 const summerIdentityLabels: Record<
@@ -1018,7 +1155,7 @@ if (location.search.includes("interactions")) {
   };
   window.requestAnimationFrame(animate);
 } else if (location.search.includes("occupations")) {
-  void warmOccupationCharacterAtlases();
+  void warmRequestedOccupationPreview();
   const animate = (now: number): void => {
     renderOccupations(now);
     window.requestAnimationFrame(animate);

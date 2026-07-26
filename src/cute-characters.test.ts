@@ -101,6 +101,27 @@ describe("v5 cute character geometry", () => {
       adult.headHeight / adult.height
     );
   });
+
+  it("keeps healthy adult male and female fallback silhouettes distinct", () => {
+    for (const heritage of heritages) {
+      const male = cuteGeometry(
+        avatarLook(7, "male", heritage)
+      );
+      const female = cuteGeometry(
+        avatarLook(7, "female", heritage)
+      );
+
+      expect(male.shoulderWidth).toBeGreaterThan(
+        female.shoulderWidth
+      );
+      expect(female.hipWidth / female.torsoWidth).toBeGreaterThan(
+        male.hipWidth / male.torsoWidth
+      );
+      expect(female.hipWidth).toBeGreaterThan(
+        female.torsoWidth
+      );
+    }
+  });
 });
 
 describe("v5 cute character renderer matrix", () => {

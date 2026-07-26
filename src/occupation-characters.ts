@@ -11,9 +11,13 @@ export type OccupationHeritage = Extract<
   "western" | "asian"
 >;
 export type OccupationAgeBand = "adult" | "middleAge";
+export type LegacyJobUniform = Extract<
+  JobUniform,
+  "doctor" | "trainer" | "dancer" | "soldier" | "farmer"
+>;
 
 export interface OccupationCharacterFrame {
-  atlasKey: `${JobUniform}-${OccupationHeritage}-${Gender}`;
+  atlasKey: `${LegacyJobUniform}-${OccupationHeritage}-${Gender}`;
   ageBand: OccupationAgeBand;
   column: number;
 }
@@ -38,8 +42,8 @@ interface OccupationAnchorManifest {
   version: 1;
   cellSize: number;
   anchorSpace: "source-cell-pixels";
-  jobs: readonly JobUniform[];
-  ageBands: Record<JobUniform, OccupationAgeBand>;
+  jobs: readonly LegacyJobUniform[];
+  ageBands: Record<LegacyJobUniform, OccupationAgeBand>;
   columns: readonly [
     "frontNeutral",
     "screenLeftNeutral",
@@ -67,7 +71,7 @@ export const OCCUPATION_UNIFORMS = [
   "dancer",
   "soldier",
   "farmer",
-] as const satisfies readonly JobUniform[];
+] as const satisfies readonly LegacyJobUniform[];
 export const OCCUPATION_HERITAGES = [
   "western",
   "asian",
@@ -83,7 +87,7 @@ const FACING_COLUMN: Record<OccupationFacing, number> = {
 };
 
 const JOB_ATLAS_URLS: Record<
-  JobUniform,
+  LegacyJobUniform,
   Record<OccupationHeritage, Record<Gender, string>>
 > = {
   doctor: {
@@ -209,7 +213,7 @@ export function occupationHeritage(
 }
 
 export function occupationCharacterFrame(
-  uniform: JobUniform,
+  uniform: LegacyJobUniform,
   heritage: HeritageStyle,
   gender: Gender,
   motion: OccupationCharacterMotion = {}
@@ -230,7 +234,7 @@ export function occupationCharacterFrame(
 }
 
 function atlasStateFor(
-  uniform: JobUniform,
+  uniform: LegacyJobUniform,
   heritage: OccupationHeritage,
   gender: Gender,
   retryFailed = false
@@ -289,7 +293,7 @@ function atlasStateFor(
 export async function warmOccupationCharacterAtlases(
   heritage?: HeritageStyle,
   gender?: Gender,
-  uniform?: JobUniform
+  uniform?: LegacyJobUniform
 ): Promise<boolean> {
   if (typeof Image === "undefined") return true;
   const heritages = heritage
@@ -324,7 +328,7 @@ export async function warmOccupationCharacterAtlases(
 }
 
 export function occupationCharacterAtlasUrl(
-  uniform: JobUniform,
+  uniform: LegacyJobUniform,
   heritage: OccupationHeritage,
   gender: Gender
 ): string {
@@ -361,7 +365,7 @@ export function drawOccupationCharacter(
   ctx: CanvasRenderingContext2D,
   x: number,
   footY: number,
-  uniform: JobUniform,
+  uniform: LegacyJobUniform,
   heritage: HeritageStyle,
   gender: Gender,
   options: OccupationCharacterDrawOptions = {}

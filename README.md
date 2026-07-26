@@ -51,8 +51,12 @@ them in balance, and at the very end the game writes the **story of the life you
 - **☀️ Adult seasons and summer clothes** — Career, Marriage and Middle Age
   progress through stable Spring, Summer, Autumn and Winter quarters. During
   Summer, eligible casual and off-duty characters switch to reviewed
-  short-sleeve outfits with shorts or knee-length skirts, including real
-  walking poses in every direction. Required professional uniforms still win.
+  short-sleeve outfits with shorts or knee-length skirts. Thirteen expanded
+  careers also have lighter job-specific summer uniforms with real walking
+  poses in every direction; the original safety/formal uniforms stay standard.
+- **👩‍💼 Parent careers** — Advanced setup can give Mum and Dad independent
+  jobs. Their labels and outfits follow those selections without changing
+  family money, support, player perks, or career balance.
 - **👨‍👩‍👧 The people in your life** — bond with the characters in each room: **Mum, Dad,
   Grandma, Grandpa** as a baby; **study pals, best friends and a first crush** at school;
   a **coworker and gym buddy** at work; your **spouse, kids and old friends** later on. And
@@ -74,7 +78,7 @@ them in balance, and at the very end the game writes the **story of the life you
   large. Fun costs money — parties, holidays, games, eating out, even a scratch card — and
   **if you can't afford it, you can't do it**, so earning (jobs, chores, a side hustle)
   matters. High health, happiness and IQ even **discount** what activities cost you.
-- **💼 Career & profile** — choose from **20 careers** across fields (Service → Trades →
+- **💼 Career & profile** — choose from **23 careers** across fields (Service → Trades →
   Tech → Medicine → Finance → Law → Business…); your salary = the job × your IQ, and the
   best roles need a high IQ. **Change jobs or climb the ladder** any time from the 💼
   Career desk, and open your **LinkedIn-style career profile** (💼 button or `P`) to see
@@ -151,6 +155,11 @@ The seated-newborn and body-motion release is recorded in
 summer identity; the Career testing, persistent job outfits, seasonal policy,
 and production asset contract are recorded in
 [`V5_CAREER_TESTING_AND_SUMMER_WORKLOG.md`](V5_CAREER_TESTING_AND_SUMMER_WORKLOG.md).
+`avatar-preview.html?occupations&pack=service&season=summer` reviews one
+career-art pack at a time; replace `service` with `technical`, `leadership`, or
+`legacy`, and add `&job=teacher` (or another uniform id) for all eight frames.
+The expanded career and parent-job release is recorded in
+[`V5_PARENT_CAREERS_AND_SEASONAL_OUTFITS_WORKLOG.md`](V5_PARENT_CAREERS_AND_SEASONAL_OUTFITS_WORKLOG.md).
 
 ## 📖 Biography mode
 

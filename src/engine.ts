@@ -4,6 +4,7 @@ import type {
   HeritageStyle,
   HistoryEntry,
   HouseTier,
+  JobUniform,
   LifeOption,
   Occupation,
   OptionCategory,
@@ -80,11 +81,12 @@ import {
 } from "./storybook-characters";
 import { warmStorybookPetAtlases } from "./storybook-pets";
 import {
-  drawOccupationCharacter,
-  OCCUPATION_UNIFORMS,
-  occupationHeritage,
-  warmOccupationCharacterAtlases,
-} from "./occupation-characters";
+  drawJobCharacter,
+  JOB_UNIFORMS,
+  jobArtHeritage,
+  jobUniformHasSummer,
+  warmJobCharacterAtlases,
+} from "./job-characters";
 import {
   drawSummerCharacter,
   warmSummerCharacterAtlases,
@@ -92,7 +94,15 @@ import {
 import {
   professionLifeOptions,
   sameProfessionVisual,
+  type ProfessionVisualIdentity,
 } from "./profession-npcs";
+import {
+  EMPTY_PARENT_CAREERS,
+  normalizeParentCareerIds,
+  parentOccupation,
+  parentProfessionSpec,
+  type ParentCareerIds,
+} from "./parent-careers";
 import { playerCareerUniform } from "./career-uniform";
 import { playerBodyVariantAtAge } from "./player-body-variant";
 import {
@@ -1332,6 +1342,8 @@ interface Snapshot {
   mental: number;
   partnerId: string | null;
   occupationId: string | null;
+  /** Optional on read so saves made before parent career setup still load. */
+  parentCareerIds?: ParentCareerIds;
   commute: string | null;
   lifetimeEarned: number;
   connections: number;
@@ -1414,6 +1426,16 @@ function stableAnswerOrder(seed: string, count: number): number[] {
   );
 }
 
+function jobArtSeasonFor(
+  uniform: JobUniform,
+  lifeSeason: LifeSeason | null
+): "standard" | "summer" {
+  return lifeSeason === "summer" &&
+    jobUniformHasSummer(uniform)
+    ? "summer"
+    : "standard";
+}
+
 export class Game {
   private ui: UIRefs;
   private mode: Mode = "title";
@@ -1435,6 +1457,8 @@ export class Game {
   private nutrition = START_NUTRITION; // diet quality: good food up, junk down
   private mental = START_MENTAL; // mental wellbeing: family/friends + happiness
   private occupation: Occupation | null = null;
+  private parentCareerIds: ParentCareerIds =
+    EMPTY_PARENT_CAREERS;
   private commute: string | null = null; // chosen commute (career selection stage)
   private playerName = ""; // optional name for the LinkedIn-style career profile
   private lifetimeEarned = 0; // total dollars earned from work over the whole life
@@ -1671,6 +1695,7 @@ export class Game {
       nutrition: Math.round(this.nutrition),
       mental: Math.round(this.mental),
       occupation: this.occupation?.id ?? null,
+      parentCareerIds: { ...this.parentCareerIds },
       commute: this.commute,
       lifetimeEarned: Math.round(this.lifetimeEarned),
       connections: this.connections,
@@ -1840,6 +1865,10 @@ export class Game {
       save.snapshot.petFacing
     );
     save.snapshot.lifeSeed = lifeSeed;
+    const savedParentCareerIds = normalizeParentCareerIds(
+      save.snapshot.parentCareerIds
+    );
+    save.snapshot.parentCareerIds = savedParentCareerIds;
     for (const checkpoint of save.timeline) {
       if (!checkpoint || typeof checkpoint !== "object") continue;
       checkpoint.heritage = this.normalizeHeritage(checkpoint.heritage);
@@ -1859,6 +1888,9 @@ export class Game {
         checkpoint.lifeSeed.trim()
           ? checkpoint.lifeSeed.slice(0, 80)
           : lifeSeed;
+      checkpoint.parentCareerIds = normalizeParentCareerIds(
+        checkpoint.parentCareerIds ?? savedParentCareerIds
+      );
     }
     if (button) {
       button.disabled = true;
@@ -1880,6 +1912,24 @@ export class Game {
         gender: save.snapshot.gender,
         heritage,
       });
+      const savedLifeSeason = lifeSeasonAt(
+        STAGES[stageIndex]?.id ?? "",
+        save.snapshot.age
+      );
+      const savedJobVisuals: ProfessionVisualIdentity[] = [];
+      if (savedBodyVariant.kind === "career-uniform") {
+        savedJobVisuals.push(
+          savedBodyVariant.careerUniform
+        );
+      }
+      for (const role of ["mother", "father"] as const) {
+        const profession = parentProfessionSpec(
+          role,
+          savedParentCareerIds,
+          heritage
+        );
+        if (profession) savedJobVisuals.push(profession);
+      }
       // Saved lives may use an atlas that has not been requested on the title
       // screen. Decode the whole heritage pair before gameplay so neither the
       // player nor opposite-gender family briefly flashes the old fallback.
@@ -1888,18 +1938,23 @@ export class Game {
       }
       const [ready] = await Promise.all([
         warmStorybookCharacterAtlases(heritage),
-        savedBodyVariant.kind === "career-uniform"
-          ? warmOccupationCharacterAtlases(
-              savedBodyVariant.careerUniform.heritage,
-              savedBodyVariant.careerUniform.gender,
-              savedBodyVariant.careerUniform.uniform
-            )
-          : savedBodyVariant.kind === "summer-casual"
+        savedBodyVariant.kind === "summer-casual"
             ? warmSummerCharacterAtlases(
                 heritage,
                 save.snapshot.gender
               )
-          : Promise.resolve(true),
+            : Promise.resolve(true),
+        ...savedJobVisuals.map((visual) =>
+          warmJobCharacterAtlases(
+            visual.heritage,
+            visual.gender,
+            visual.uniform,
+            jobArtSeasonFor(
+              visual.uniform,
+              savedLifeSeason
+            )
+          )
+        ),
       ]);
       if (!ready) {
         if (button?.isConnected) {
@@ -1980,7 +2035,9 @@ export class Game {
     keepBiography = false,
     startStageIndex = 0,
     familyFundOverride?: number,
-    startingIqOverride: number | null = null
+    startingIqOverride: number | null = null,
+    parentCareerIds: ParentCareerIds =
+      EMPTY_PARENT_CAREERS
   ): void {
     if (!keepBiography) this.clearSavedGame();
     if (!keepBiography) this.biography = null; // normal play is never a replay
@@ -1998,6 +2055,9 @@ export class Game {
     this.mental = START_MENTAL;
     this.recomputeHealth();
     this.occupation = null;
+    this.parentCareerIds = keepBiography
+      ? EMPTY_PARENT_CAREERS
+      : normalizeParentCareerIds(parentCareerIds);
     this.commute = null;
     this.homeQuality = 0;
     this.homes = [];
@@ -2125,6 +2185,7 @@ export class Game {
       mental: this.mental,
       partnerId: this.partner?.id ?? null,
       occupationId: this.occupation?.id ?? null,
+      parentCareerIds: { ...this.parentCareerIds },
       commute: this.commute,
       lifetimeEarned: this.lifetimeEarned,
       connections: this.connections,
@@ -2195,24 +2256,45 @@ export class Game {
       if (ch && ch.moments.length) return ch.moments.map((m) => this.sanitizeMoment(m));
       return []; // an authored life with nothing recorded for this chapter — a quiet time
     }
-    const base = this.withFamilyPresence(
-      s.options.filter((o) => this.optionAvailable(o)),
-      s
+    const base = this.withParentCareerDetails(
+      this.withFamilyPresence(
+        s.options.filter((o) => this.optionAvailable(o)),
+        s
+      )
     );
+    const reservedProfessionVisuals: ProfessionVisualIdentity[] =
+      [];
     const reservedPlayerCareerVisual =
       playerCareerUniform(
         this.occupation,
         s.id,
         this.gender,
         this.heritage
-      ) ?? undefined;
+      );
+    if (reservedPlayerCareerVisual) {
+      reservedProfessionVisuals.push(
+        reservedPlayerCareerVisual
+      );
+    }
+    for (const role of ["mother", "father"] as const) {
+      const profession = parentProfessionSpec(
+        role,
+        this.parentCareerIds,
+        this.heritage
+      );
+      if (profession) {
+        reservedProfessionVisuals.push(profession);
+      }
+    }
     return [
       ...base,
       ...professionLifeOptions(
         this.lifeSeed,
         s.id,
         3,
-        reservedPlayerCareerVisual
+        reservedProfessionVisuals.length
+          ? reservedProfessionVisuals
+          : undefined
       ),
     ];
   }
@@ -2237,6 +2319,43 @@ export class Game {
     if (!present("sibling") && !present("babySibling"))
       extra.push({ id: "sibling", label: "Sibling", icon: "🧑", person: "sibling", desc: "Your brother or sister — a partner in crime through all of it.", category: "social", effects: { happiness: 6, fun: 3 }, storyTag: "friends" });
     return extra.length ? [...base, ...extra] : base;
+  }
+
+  /**
+   * Parent careers add identity and conversation context only. Keeping this as
+   * a shallow option decoration preserves every authored effect, cost, earning,
+   * support rule, and story tag unchanged.
+   */
+  private withParentCareerDetails(
+    options: LifeOption[]
+  ): LifeOption[] {
+    return options.map((option) => {
+      const role =
+        option.person === "mother"
+          ? "mother"
+          : option.person === "father"
+            ? "father"
+            : null;
+      if (!role) return option;
+      const occupation = parentOccupation(
+        role,
+        this.parentCareerIds
+      );
+      if (!occupation) return option;
+      const roleLabel =
+        role === "mother" ? "Mum" : "Dad";
+      const professionNpc = parentProfessionSpec(
+        role,
+        this.parentCareerIds,
+        this.heritage
+      );
+      return {
+        ...option,
+        label: `${roleLabel} · ${occupation.name}`,
+        desc: `${option.desc} ${roleLabel}'s job: ${occupation.name}.`,
+        ...(professionNpc ? { professionNpc } : {}),
+      };
+    });
   }
 
   /** Reduce a loaded biography moment to known-safe fields (localStorage is untrusted,
@@ -2318,7 +2437,12 @@ export class Game {
     });
     this.people = this.stations.filter((s) => s.kind === "person");
     const portraitLooks = this.people
-      .filter((station) => !station.opt.professionNpc)
+      .filter(
+        (station) =>
+          !station.opt.professionNpc ||
+          station.opt.person === "mother" ||
+          station.opt.person === "father"
+      )
       .map((station) =>
         personLook(
           station.opt.person!,
@@ -2330,13 +2454,18 @@ export class Game {
         )
       );
     void warmStorybookPortraits(portraitLooks);
+    const lifeSeason = this.currentLifeSeason();
     for (const station of this.people) {
       const profession = station.opt.professionNpc;
       if (!profession) continue;
-      void warmOccupationCharacterAtlases(
+      void warmJobCharacterAtlases(
         profession.heritage,
         profession.gender,
-        profession.uniform
+        profession.uniform,
+        jobArtSeasonFor(
+          profession.uniform,
+          lifeSeason
+        )
       );
     }
   }
@@ -3579,6 +3708,9 @@ export class Game {
     if (!snap) return;
     this.gender = snap.gender;
     this.heritage = snap.heritage ?? "western";
+    this.parentCareerIds = normalizeParentCareerIds(
+      snap.parentCareerIds
+    );
     this.appearance = this.normalizeAppearance(snap.appearance);
     this.lifeSeed =
       typeof snap.lifeSeed === "string" && snap.lifeSeed.trim()
@@ -4399,6 +4531,7 @@ export class Game {
         playerBodyVariant.kind === "career-uniform"
           ? playerBodyVariant.careerUniform
           : null;
+      const lifeSeason = this.currentLifeSeason();
       drawRoom(ctx, s.theme, W, H, FLOOR_Y, doorActive, t, {
         scene: s.scene,
         upperScene: this.upperScene(),
@@ -4453,7 +4586,7 @@ export class Game {
           };
           let drewCustomBody = false;
           if (careerUniform) {
-            drewCustomBody = drawOccupationCharacter(
+            drewCustomBody = drawJobCharacter(
               ctx,
               this.px,
               this.py,
@@ -4465,6 +4598,10 @@ export class Game {
                 facing: this.facing,
                 moving: this.moving,
                 phase: this.walkPhase,
+                season: jobArtSeasonFor(
+                  careerUniform.uniform,
+                  lifeSeason
+                ),
               }
             );
           } else if (
@@ -4532,10 +4669,17 @@ export class Game {
           drawEventItem(ctx, st.x, st.y, st.event.id, st.event.emoji, st.event.title, st.event.good !== false, focused, t);
         } else if (st.opt.person) {
           const profession = st.opt.professionNpc;
+          const isParent =
+            st.opt.person === "mother" ||
+            st.opt.person === "father";
+          const seatedNewbornParent =
+            isParent && this.shouldSitWithNewborn(st);
           let drewProfession = false;
           if (
             profession &&
-            (!careerUniform ||
+            !seatedNewbornParent &&
+            (isParent ||
+              !careerUniform ||
               !sameProfessionVisual(
                 profession,
                 careerUniform
@@ -4543,14 +4687,22 @@ export class Game {
           ) {
             ctx.save();
             if (used) ctx.globalAlpha = 0.5;
-            drewProfession = drawOccupationCharacter(
+            drewProfession = drawJobCharacter(
               ctx,
               st.x,
               st.y,
               profession.uniform,
               profession.heritage,
               profession.gender,
-              { size: 142, facing: "front", moving: false }
+              {
+                size: 142,
+                facing: "front",
+                moving: false,
+                season: jobArtSeasonFor(
+                  profession.uniform,
+                  lifeSeason
+                ),
+              }
             );
             ctx.restore();
             if (drewProfession) {
@@ -6148,6 +6300,13 @@ export class Game {
             : "";
       return `<option value="${iq}">${iq}${note}</option>`;
     }).join("");
+    const parentCareerOptions = [
+      `<option value="">None / not specified</option>`,
+      ...OCCUPATIONS.map(
+        (occupation) =>
+          `<option value="${esc(occupation.id)}">${occupation.emoji} ${esc(occupation.name)}</option>`
+      ),
+    ].join("");
     const heritageCards = HERITAGE_OPTIONS.map((h) => `
       <button class="plj-heritage${h.id === this.heritage ? " is-selected" : ""}" data-heritage="${h.id}">
         <span>${esc(h.label)}</span>
@@ -6196,6 +6355,16 @@ export class Game {
             </select>
             <small>University testing: use 160 so every Career option stays available.</small>
           </label>
+          <label class="plj-setup-field">
+            <span>Mother job</span>
+            <select id="plj-mother-job">${parentCareerOptions}</select>
+            <small>Visual and label only; it does not change family money or support.</small>
+          </label>
+          <label class="plj-setup-field">
+            <span>Father job</span>
+            <select id="plj-father-job">${parentCareerOptions}</select>
+            <small>Choose independently, or leave as None.</small>
+          </label>
           <label class="plj-setup-field plj-setup-field-wide">
             <span>Life speed <b id="plj-life-speed-readout">${this.lifeSpeedLabel()}</b></span>
             <input id="plj-life-speed" type="range" ${this.lifeSpeedInputAttrs()}>
@@ -6215,6 +6384,14 @@ export class Game {
     const startIqInput =
       this.ui.overlay.querySelector<HTMLSelectElement>(
         "#plj-start-iq"
+      )!;
+    const motherJobInput =
+      this.ui.overlay.querySelector<HTMLSelectElement>(
+        "#plj-mother-job"
+      )!;
+    const fatherJobInput =
+      this.ui.overlay.querySelector<HTMLSelectElement>(
+        "#plj-father-job"
       )!;
     speedInput.oninput = () => {
       this.setLifeSpeedIndex(Number(speedInput.value));
@@ -6260,6 +6437,11 @@ export class Game {
         );
         const startingIqOverride =
           normalizeStartingIq(startIqInput.value);
+        const selectedParentCareerIds =
+          normalizeParentCareerIds({
+            mother: motherJobInput.value || null,
+            father: fatherJobInput.value || null,
+          });
         this.setLifeSpeedIndex(Number(speedInput.value));
         this.setupFamilyFund = backgroundMoney(this.economicBackground);
         const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
@@ -6272,6 +6454,8 @@ export class Game {
           backgroundInput,
           startStageInput,
           startIqInput,
+          motherJobInput,
+          fatherJobInput,
           speedInput,
         ];
         genderButtons.forEach((choice) => {
@@ -6287,8 +6471,34 @@ export class Game {
         startLifeButton.disabled = true;
         startLifeButton.setAttribute("aria-busy", "true");
         startLifeButton.textContent = "Loading this life…";
-        const ready =
-          await warmStorybookCharacterAtlases(selectedHeritage);
+        const startLifeSeason = lifeSeasonAt(
+          STAGES[startIndex]?.id ?? "",
+          STAGES[startIndex]?.ageStart ?? 0
+        );
+        const parentWarmers: Promise<boolean>[] = [];
+        for (const role of ["mother", "father"] as const) {
+          const profession = parentProfessionSpec(
+            role,
+            selectedParentCareerIds,
+            selectedHeritage
+          );
+          if (!profession) continue;
+          parentWarmers.push(
+            warmJobCharacterAtlases(
+              profession.heritage,
+              profession.gender,
+              profession.uniform,
+              jobArtSeasonFor(
+                profession.uniform,
+                startLifeSeason
+              )
+            )
+          );
+        }
+        const [ready] = await Promise.all([
+          warmStorybookCharacterAtlases(selectedHeritage),
+          ...parentWarmers,
+        ]);
         if (this.mode !== "setup" || this.heritage !== selectedHeritage) return;
         if (!ready) {
           genderButtons.forEach((choice) => {
@@ -6311,7 +6521,8 @@ export class Game {
           false,
           startIndex,
           this.setupFamilyFund,
-          startingIqOverride
+          startingIqOverride,
+          selectedParentCareerIds
         );
     };
     void this.prepareSetupCharacterPair(this.heritage);
@@ -6866,10 +7077,14 @@ export class Game {
   private warmPlayerBodyVariant(): void {
     const bodyVariant = this.currentPlayerBodyVariant();
     if (bodyVariant.kind === "career-uniform") {
-      void warmOccupationCharacterAtlases(
+      void warmJobCharacterAtlases(
         bodyVariant.careerUniform.heritage,
         bodyVariant.careerUniform.gender,
-        bodyVariant.careerUniform.uniform
+        bodyVariant.careerUniform.uniform,
+        jobArtSeasonFor(
+          bodyVariant.careerUniform.uniform,
+          this.currentLifeSeason()
+        )
       );
       return;
     }
@@ -6919,7 +7134,7 @@ export class Game {
   }
 
   private occupationCardFace(o: Occupation): string {
-    if (!o.uniform || !occupationHeritage(this.heritage)) {
+    if (!o.uniform || !jobArtHeritage(this.heritage)) {
       return `<span class="plj-partner-face">${o.emoji}</span>`;
     }
     return `<canvas class="plj-occupation-face" width="144" height="168" data-uniform="${o.uniform}" data-emoji="${o.emoji}" role="img" aria-label="${esc(o.name)} representative"></canvas>`;
@@ -6931,23 +7146,33 @@ export class Game {
       .forEach((canvas) => {
         const uniform = canvas.dataset.uniform;
         if (
-          !OCCUPATION_UNIFORMS.includes(
-            uniform as (typeof OCCUPATION_UNIFORMS)[number]
+          !uniform ||
+          !JOB_UNIFORMS.includes(
+            uniform as JobUniform
           )
         ) {
           return;
         }
+        const jobUniform = uniform as JobUniform;
         const context = canvas.getContext("2d");
         if (!context) return;
         context.clearRect(0, 0, canvas.width, canvas.height);
-        const drawn = drawOccupationCharacter(
+        const drawn = drawJobCharacter(
           context,
           canvas.width / 2,
           canvas.height - 5,
-          uniform as (typeof OCCUPATION_UNIFORMS)[number],
+          jobUniform,
           this.heritage,
           this.gender,
-          { facing: "front", size: 160, shadow: false }
+          {
+            facing: "front",
+            size: 160,
+            shadow: false,
+            season: jobArtSeasonFor(
+              jobUniform,
+              this.currentLifeSeason()
+            ),
+          }
         );
         if (drawn) return;
         context.fillStyle = "#fff8df";
@@ -6964,10 +7189,28 @@ export class Game {
 
   private prepareOccupationCardFaces(): void {
     this.renderOccupationCardFaces();
-    if (!occupationHeritage(this.heritage)) return;
-    void warmOccupationCharacterAtlases(
-      this.heritage,
-      this.gender
+    if (!jobArtHeritage(this.heritage)) return;
+    const uniforms = [
+      ...new Set(
+        OCCUPATIONS.map(
+          (occupation) => occupation.uniform
+        ).filter(
+          (uniform): uniform is JobUniform => !!uniform
+        )
+      ),
+    ];
+    void Promise.all(
+      uniforms.map((uniform) =>
+        warmJobCharacterAtlases(
+          this.heritage,
+          this.gender,
+          uniform,
+          jobArtSeasonFor(
+            uniform,
+            this.currentLifeSeason()
+          )
+        )
+      )
     ).then(() => {
       if (
         this.mode === "occupation" ||

@@ -9,6 +9,60 @@ import {
 } from "./profession-npcs";
 
 describe("adult profession NPC cast", () => {
+  it("includes the exact thirteen requested roles and preserves the legacy cast", () => {
+    const requested = [
+      ["teacher", "teacher"],
+      ["chef", "chef"],
+      ["barista", "barista"],
+      ["athlete", "athlete"],
+      ["entrepreneur", "entrepreneur"],
+      ["generalengineer", "generalengineer"],
+      ["softwareengineer", "softwareengineer"],
+      ["manager", "manager"],
+      ["analyst", "analyst"],
+      ["artist", "artist"],
+      ["police", "police"],
+      ["lawyer", "lawyer"],
+      ["ceo", "ceo"],
+    ];
+    const legacy = [
+      ["doctor", "doctor"],
+      ["nurse", "doctor"],
+      ["trainer", "trainer"],
+      ["dancer", "dancer"],
+      ["soldier", "soldier"],
+      ["farmer", "farmer"],
+    ];
+    const catalog = PROFESSION_ROLES.map((role) => [
+      role.id,
+      role.uniform,
+    ]);
+
+    expect(catalog).toEqual([...legacy, ...requested]);
+    expect(
+      PROFESSION_ROLES.slice(legacy.length).map(
+        (role) => role.label
+      )
+    ).toEqual([
+      "Teacher",
+      "Chef",
+      "Barista",
+      "Athlete",
+      "Entrepreneur",
+      "Engineer",
+      "Software Engineer",
+      "Manager",
+      "Financial Analyst",
+      "Artist",
+      "Police Officer",
+      "Lawyer",
+      "CEO",
+    ]);
+    expect(new Set(catalog.map(([id]) => id)).size).toBe(
+      catalog.length
+    );
+  });
+
   it("appears only after university", () => {
     for (const stageId of [
       "newborn",
@@ -86,6 +140,93 @@ describe("adult profession NPC cast", () => {
     }
   });
 
+  it("reserves player and parent visuals supplied as a readonly array", () => {
+    const reserved = [
+      {
+        uniform: "softwareengineer",
+        gender: "female",
+        heritage: "asian",
+      },
+      {
+        uniform: "lawyer",
+        gender: "female",
+        heritage: "western",
+      },
+      {
+        uniform: "chef",
+        gender: "male",
+        heritage: "western",
+      },
+    ] as const;
+
+    for (const stageId of PROFESSION_NPC_STAGE_IDS) {
+      for (let seed = 0; seed < 50; seed += 1) {
+        const cast = professionNpcsForStage(
+          `family-${seed}`,
+          stageId,
+          3,
+          reserved
+        );
+        expect(cast).toHaveLength(3);
+        expect(
+          cast.some((npc) =>
+            reserved.some((visual) =>
+              sameProfessionVisual(npc, visual)
+            )
+          )
+        ).toBe(false);
+        expect(
+          new Set(
+            cast.map(
+              (npc) =>
+                `${npc.uniform}:${npc.gender}:${npc.heritage}`
+            )
+          ).size
+        ).toBe(cast.length);
+      }
+    }
+  });
+
+  it("accepts a readonly set and skips a role when every exact body is reserved", () => {
+    const reserved = new Set([
+      {
+        uniform: "doctor",
+        gender: "male",
+        heritage: "western",
+      },
+      {
+        uniform: "doctor",
+        gender: "male",
+        heritage: "asian",
+      },
+      {
+        uniform: "doctor",
+        gender: "female",
+        heritage: "western",
+      },
+      {
+        uniform: "doctor",
+        gender: "female",
+        heritage: "asian",
+      },
+    ] as const);
+
+    for (const stageId of PROFESSION_NPC_STAGE_IDS) {
+      for (let seed = 0; seed < 50; seed += 1) {
+        const cast = professionNpcsForStage(
+          `blocked-medical-${seed}`,
+          stageId,
+          3,
+          reserved
+        );
+        expect(cast).toHaveLength(3);
+        expect(
+          cast.some((npc) => npc.uniform === "doctor")
+        ).toBe(false);
+      }
+    }
+  });
+
   it("varies the cast across lives and chapters", () => {
     const casts = new Set(
       ["life-a", "life-b", "life-c", "life-d"].flatMap((seed) =>
@@ -99,7 +240,7 @@ describe("adult profession NPC cast", () => {
     expect(casts.size).toBeGreaterThan(5);
   });
 
-  it("can surface every reviewed profession, including nurse", () => {
+  it("can surface every legacy and requested profession", () => {
     const seen = new Set<string>();
     for (let seed = 0; seed < 30; seed += 1) {
       for (const stageId of PROFESSION_NPC_STAGE_IDS) {
@@ -117,15 +258,23 @@ describe("adult profession NPC cast", () => {
   });
 
   it("builds unique interactable station options with matching fallback gender", () => {
-    const options = professionLifeOptions(
-      "life-a",
-      "career",
-      3,
+    const reserved = [
       {
         uniform: "dancer",
         gender: "male",
         heritage: "western",
-      }
+      },
+      {
+        uniform: "teacher",
+        gender: "female",
+        heritage: "asian",
+      },
+    ] as const;
+    const options = professionLifeOptions(
+      "life-a",
+      "career",
+      3,
+      reserved
     );
     expect(new Set(options.map((option) => option.id)).size).toBe(3);
     for (const option of options) {
@@ -139,10 +288,12 @@ describe("adult profession NPC cast", () => {
         option.professionNpc?.heritage
       );
       expect(
-        option.professionNpc
-          ? `${option.professionNpc.uniform}:${option.professionNpc.gender}:${option.professionNpc.heritage}`
-          : ""
-      ).not.toBe("dancer:male:western");
+        reserved.some(
+          (visual) =>
+            option.professionNpc &&
+            sameProfessionVisual(option.professionNpc, visual)
+        )
+      ).toBe(false);
     }
   });
 });

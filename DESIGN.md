@@ -8,8 +8,9 @@
 > expressive heads, rounded shapes, short limbs, warm dark outlines and readable
 > four-direction poses. Sidewalk Iced Tea v3 informed the broad appeal principles,
 > but no character assets, costumes, poses or source code are copied.
-> Adult chapters also carry a stable four-season visual rhythm. Reviewed
-> short-sleeve summer bodies remain subordinate to required career uniforms.
+> Adult chapters also carry a stable four-season visual rhythm. Thirteen
+> expanded careers have reviewed standard and short-sleeve summer uniforms;
+> the original five safety/formal uniforms retain their standard artwork.
 
 > A living design doc. The whole game is **data-driven**: the life-stage graph
 > below mirrors the data in [`src/stages.ts`](src/stages.ts). To add or change a
@@ -72,11 +73,19 @@ Plus two derived values:
   and you can **upskill** at work to raise Smarts mid-career.
 - **☀️ Adult seasons → wardrobe** — Career, Marriage and Middle Age divide their
   saved age progress into four equal Spring/Summer/Autumn/Winter quarters.
-  During Summer, casual jobs can use short sleeves and short lower garments in
-  the Career office; all unillustrated jobs can use them off duty in the home
-  chapters. Reviewed, regulated, safety and formal workwear retains precedence.
+  During Summer, the expanded service, technical and leadership careers use
+  job-specific lighter fabrics, short sleeves and suitable knee-length garments
+  in the Career office and home chapters. Chef, engineer and police outfits
+  retain the protection their work needs. The original five illustrated
+  professions keep their standard uniforms, while generic off-duty characters
+  use casual summer bodies.
   Season selection is derived from chapter and saved age, never animation time
   or the rotating scenery, so reload and rewind reproduce the same result.
+- **👩‍💼 Parent careers** — Advanced setup stores separate stable occupation ids
+  for Mum and Dad. These decorate parent labels and bodies only; they do not
+  affect family funds, support payments, player perks, IQ, or salary. A parent
+  comforting the newborn keeps the authored seated pose because career atlases
+  are standing/walking sheets.
 - **🏠 Buy a house** — at Career/Marriage you can buy a home you can afford
   (see [`houses.ts`](src/houses.ts)). The tier sets a lasting **home quality (1–4)**
   that becomes the *background* of every home room afterwards — a grand house is
