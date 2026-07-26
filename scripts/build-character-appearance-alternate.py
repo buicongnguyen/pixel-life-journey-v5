@@ -45,6 +45,20 @@ UNIFIED_ROWS = (
     "middleAge",
     "elder",
 )
+ALTERNATE_BODY_ALIGNMENT_FRACTION = 0.55
+HEAD_PATCH_FRACTION = 0.48
+HEAD_CENTROID_FRACTION = 0.42
+MAX_RENDERED_HEAD_DRIFT = 3.0
+RUNTIME_HEIGHT_BY_ROW = (
+    72 * 1.15,
+    96 * 1.15,
+    106 * 1.15,
+    116 * 1.15,
+    124 * 1.15,
+    128 * 1.15,
+    126 * 1.15,
+    120 * 1.15,
+)
 SOURCE_FAMILIES = {
     "base-neutral": 5,
     "expansion-neutral": 3,
@@ -58,6 +72,45 @@ SOURCE_FAMILIES = {
 # retain their source order.
 NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL = (0, 3, 2, 1)
 MOTION_SOURCE_COLUMNS_TO_CANONICAL = (0, 1, 2, 3)
+
+# Generated rows did not all follow the same "character's left side" versus
+# literal screen-left convention. This exhaustive reviewed table repairs the
+# canonicalized runtime row after the global source convention above. "neutral"
+# swaps columns 1/3; "motion" swaps columns 5/7; "none" is already literal.
+SIDE_REPAIR_BY_ATLAS_ROW: dict[str, tuple[str, ...]] = {
+    "western-male": (
+        "none", "none", "neutral", "none",
+        "neutral", "none", "neutral", "none",
+    ),
+    "western-female": (
+        "none", "none", "neutral", "none",
+        "neutral", "none", "neutral", "none",
+    ),
+    "asian-male": (
+        "none", "none", "none", "none",
+        "neutral", "none", "neutral", "none",
+    ),
+    "asian-female": (
+        "motion", "motion", "neutral", "motion",
+        "neutral", "motion", "neutral", "none",
+    ),
+    "middleEastern-male": (
+        "none", "none", "neutral", "none",
+        "neutral", "none", "neutral", "none",
+    ),
+    "middleEastern-female": (
+        "motion", "none", "neutral", "none",
+        "neutral", "none", "neutral", "none",
+    ),
+    "black-male": (
+        "neutral", "neutral", "neutral", "neutral",
+        "neutral", "neutral", "neutral", "none",
+    ),
+    "black-female": (
+        "motion", "motion", "neutral", "motion",
+        "neutral", "motion", "neutral", "motion",
+    ),
+}
 
 # A small set of generated rows supplied the same screen-right profile twice.
 # Mirror the reviewed right cell into the missing left cell after unification.
@@ -326,11 +379,147 @@ def repair_duplicate_side_views(
     return neutral_rows, motion_rows
 
 
+def validate_side_repair_contract() -> None:
+    expected_keys = {
+        f"{heritage}-{gender}"
+        for heritage in HERITAGES
+        for gender in GENDERS
+    }
+    if set(SIDE_REPAIR_BY_ATLAS_ROW) != expected_keys:
+        raise ValueError(
+            "Alternate side-repair table must cover every atlas exactly"
+        )
+    allowed = {"none", "neutral", "motion"}
+    repaired_rows = 0
+    for key, repairs in SIDE_REPAIR_BY_ATLAS_ROW.items():
+        if len(repairs) != len(UNIFIED_ROWS):
+            raise ValueError(
+                f"{key} has {len(repairs)} side repairs; "
+                f"expected {len(UNIFIED_ROWS)}"
+            )
+        unknown = set(repairs) - allowed
+        if unknown:
+            raise ValueError(f"{key} has unknown side repairs: {unknown}")
+        repaired_rows += sum(repair != "none" for repair in repairs)
+    if repaired_rows != 37:
+        raise ValueError(
+            f"Expected 37 reviewed side repairs, found {repaired_rows}"
+        )
+
+
+def swap_cells(
+    atlas: Image.Image,
+    row: int,
+    first_column: int,
+    second_column: int,
+) -> None:
+    first = cell(atlas, row, first_column)
+    second = cell(atlas, row, second_column)
+    atlas.paste(
+        second,
+        (
+            first_column * CELL_SIZE,
+            row * CELL_SIZE,
+            (first_column + 1) * CELL_SIZE,
+            (row + 1) * CELL_SIZE,
+        ),
+    )
+    atlas.paste(
+        first,
+        (
+            second_column * CELL_SIZE,
+            row * CELL_SIZE,
+            (second_column + 1) * CELL_SIZE,
+            (row + 1) * CELL_SIZE,
+        ),
+    )
+
+
+def repair_direction_pairing(
+    atlas: Image.Image,
+    atlas_key: str,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    neutral_rows: list[int] = []
+    motion_rows: list[int] = []
+    for row, repair in enumerate(
+        SIDE_REPAIR_BY_ATLAS_ROW[atlas_key]
+    ):
+        if repair == "neutral":
+            swap_cells(atlas, row, 1, 3)
+            neutral_rows.append(row)
+        elif repair == "motion":
+            swap_cells(atlas, row, 5, 7)
+            motion_rows.append(row)
+    return tuple(neutral_rows), tuple(motion_rows)
+
+
 def visible_height(sprite: Image.Image) -> int:
     bbox = sprite.getchannel("A").getbbox()
     if bbox is None:
         raise ValueError("Cannot measure an empty character cell")
     return bbox[3] - bbox[1]
+
+
+def match_motion_heights(
+    atlas: Image.Image,
+) -> tuple[tuple[int, int, int, int], ...]:
+    """Renormalize motion pairs only when they fall outside the height guard."""
+
+    adjustments: list[tuple[int, int, int, int]] = []
+    max_size = CELL_SIZE - CELL_PADDING * 2
+    for row in range(len(UNIFIED_ROWS)):
+        for direction in range(4):
+            neutral = cell(atlas, row, direction)
+            motion_column = direction + 4
+            motion = cell(atlas, row, motion_column)
+            neutral_height = visible_height(neutral)
+            motion_height = visible_height(motion)
+            ratio = motion_height / neutral_height
+            if 0.98 <= ratio <= 1.05:
+                continue
+
+            bbox = motion.getchannel("A").getbbox()
+            if bbox is None:
+                raise ValueError(
+                    f"Cannot normalize empty motion r{row}c{motion_column}"
+                )
+            sprite = motion.crop(bbox)
+            target_height = min(max_size, neutral_height)
+            target_width = max(
+                1,
+                round(sprite.width * target_height / motion_height),
+            )
+            if target_width > max_size:
+                target_width = max_size
+            sprite = sprite.resize(
+                (target_width, target_height),
+                Image.Resampling.LANCZOS,
+            )
+            replacement = Image.new(
+                "RGBA",
+                (CELL_SIZE, CELL_SIZE),
+                (0, 0, 0, 0),
+            )
+            replacement.alpha_composite(
+                sprite,
+                (
+                    (CELL_SIZE - target_width) // 2,
+                    CELL_SIZE - CELL_PADDING - target_height,
+                ),
+            )
+            atlas.paste(
+                replacement,
+                (
+                    motion_column * CELL_SIZE,
+                    row * CELL_SIZE,
+                    (motion_column + 1) * CELL_SIZE,
+                    (row + 1) * CELL_SIZE,
+                ),
+            )
+            adjustments.append(
+                (row, motion_column, motion_height, target_height)
+            )
+    return tuple(adjustments)
 
 
 def vivid_magenta_pixels(sprite: Image.Image) -> int:
@@ -356,6 +545,7 @@ def atlas_anchors(
                 BASE.motion_anchor_matched_to_neutral(
                     cell(atlas, row, column),
                     cell(atlas, row, column - 4),
+                    ALTERNATE_BODY_ALIGNMENT_FRACTION,
                 )
                 if 4 <= column <= 7
                 else BASE.ground_anchor(cell(atlas, row, column))
@@ -364,6 +554,99 @@ def atlas_anchors(
         ]
         for row in range(len(UNIFIED_ROWS))
     ]
+
+
+def normalized_head_patch(sprite: Image.Image) -> Image.Image:
+    bbox = sprite.getchannel("A").getbbox()
+    if bbox is None:
+        raise ValueError("Cannot compare an empty head patch")
+    head_bottom = min(
+        bbox[3],
+        bbox[1]
+        + max(1, round((bbox[3] - bbox[1]) * HEAD_PATCH_FRACTION)),
+    )
+    crop = sprite.crop((bbox[0], bbox[1], bbox[2], head_bottom))
+    background = Image.new("RGBA", crop.size, (38, 56, 74, 255))
+    background.alpha_composite(crop)
+    return background.convert("RGB").resize(
+        (96, 96),
+        Image.Resampling.BILINEAR,
+    )
+
+
+def mean_rgb_difference(
+    first: Image.Image,
+    second: Image.Image,
+) -> float:
+    first_bytes = first.convert("RGB").tobytes()
+    second_bytes = second.convert("RGB").tobytes()
+    return sum(
+        abs(first_bytes[index] - second_bytes[index])
+        for index in range(len(first_bytes))
+    ) / len(first_bytes)
+
+
+def head_centroid_x(sprite: Image.Image) -> float:
+    return BASE.upper_body_centroid_x(
+        sprite,
+        HEAD_CENTROID_FRACTION,
+    )
+
+
+def validate_side_pairing(
+    image: Image.Image,
+    path: Path,
+    row: int,
+    anchors: list[list[list[float | int]]],
+) -> None:
+    neutral_left = cell(image, row, 1)
+    neutral_right = cell(image, row, 3)
+    motion_left = cell(image, row, 5)
+    motion_right = cell(image, row, 7)
+    patches = [
+        normalized_head_patch(sprite)
+        for sprite in (
+            neutral_left,
+            neutral_right,
+            motion_left,
+            motion_right,
+        )
+    ]
+    correct = (
+        mean_rgb_difference(patches[0], patches[2])
+        + mean_rgb_difference(patches[1], patches[3])
+    ) / 2
+    swapped = (
+        mean_rgb_difference(patches[0], patches[3])
+        + mean_rgb_difference(patches[1], patches[2])
+    ) / 2
+    if correct >= swapped * 0.95:
+        raise ValueError(
+            f"{path} r{row} side profiles are mismatched: "
+            f"correctMAD={correct:.3f}, swappedMAD={swapped:.3f}"
+        )
+
+    for neutral_column in (1, 3):
+        motion_column = neutral_column + 4
+        neutral_root = (
+            head_centroid_x(cell(image, row, neutral_column))
+            - float(anchors[row][neutral_column][0])
+        )
+        motion_root = (
+            head_centroid_x(cell(image, row, motion_column))
+            - float(anchors[row][motion_column][0])
+        )
+        rendered_drift = (
+            abs(neutral_root - motion_root)
+            * RUNTIME_HEIGHT_BY_ROW[row]
+            / CELL_SIZE
+        )
+        if rendered_drift > MAX_RENDERED_HEAD_DRIFT:
+            raise ValueError(
+                f"{path} r{row} c{neutral_column} head drifts "
+                f"{rendered_drift:.3f}px; maximum is "
+                f"{MAX_RENDERED_HEAD_DRIFT:.1f}px"
+            )
 
 
 def validate_unified(
@@ -413,6 +696,7 @@ def validate_unified(
                 BASE.motion_anchor_matched_to_neutral(
                     sprite,
                     cell(image, row, column - 4),
+                    ALTERNATE_BODY_ALIGNMENT_FRACTION,
                 )
                 if 4 <= column <= 7
                 else BASE.ground_anchor(sprite)
@@ -435,6 +719,7 @@ def validate_unified(
                         f"{path} r{row}c{column} height ratio "
                         f"{ratio:.3f} would visibly pulse"
                     )
+        validate_side_pairing(image, path, row, anchors)
 
 
 def parse_args() -> argparse.Namespace:
@@ -464,6 +749,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    validate_side_repair_contract()
     manifest_destination = (
         args.manifest
         or args.out_dir / "character-appearance-alternate-anchors.json"
@@ -580,6 +866,10 @@ def main() -> None:
             neutral_repairs, motion_repairs = repair_duplicate_side_views(
                 unified, key
             )
+            neutral_swaps, motion_swaps = repair_direction_pairing(
+                unified, key
+            )
+            height_adjustments = match_motion_heights(unified)
             unified.save(staged_path, format="PNG", optimize=True)
             anchors = atlas_anchors(unified)
             validate_unified(staged_path, anchors)
@@ -590,7 +880,10 @@ def main() -> None:
             print(
                 f"validated {staged_path} ({len(anchors) * 9} cells), "
                 f"mirroredNeutralRows={neutral_repairs}, "
-                f"mirroredMotionRows={motion_repairs}"
+                f"mirroredMotionRows={motion_repairs}, "
+                f"swappedNeutralRows={neutral_swaps}, "
+                f"swappedMotionRows={motion_swaps}, "
+                f"heightAdjustments={height_adjustments}"
             )
 
         manifest = {

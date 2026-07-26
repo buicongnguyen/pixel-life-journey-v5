@@ -65,7 +65,7 @@ describe("summer character atlas routing", () => {
           const motion = summerCharacterFrame(
             heritage,
             gender,
-            { facing, moving: true, phase: 1 }
+            { facing, moving: true, phase: 2 }
           );
           expect(neutral).toEqual({
             atlasKey: `${heritage}-${gender}`,
@@ -231,8 +231,8 @@ describe("summer character atlas routing", () => {
     expect(ctx.translate.mock.calls[0][0]).toBe(90);
     expect(ctx.translate.mock.calls[0][1]).toBeCloseTo(
       150 -
-        Math.abs(Math.sin(1 * 1.85)) *
-          Math.max(0.4, 128 * 0.006)
+        Math.abs(Math.sin(1)) *
+          Math.max(0.35, 128 * 0.003)
     );
     expect(ctx.drawImage).toHaveBeenCalledOnce();
     expect(ctx.drawImage.mock.calls[0].slice(1, 5)).toEqual([

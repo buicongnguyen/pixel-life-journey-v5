@@ -140,7 +140,7 @@ describe("career outfit runtime contract", () => {
                       season,
                       facing,
                       moving: true,
-                      phase: 1,
+                      phase: 2,
                     }
                   )
                 ).toEqual({
@@ -220,7 +220,7 @@ describe("job character facade compatibility", () => {
               season: "summer",
               facing: "right",
               moving: true,
-              phase: 1,
+              phase: 2,
             }
           );
           expect(frame).toMatchObject({
@@ -245,7 +245,7 @@ describe("job character facade compatibility", () => {
           season: "summer",
           facing: "left",
           moving: true,
-          phase: 1,
+          phase: 2,
         }
       );
       expect(frame).toMatchObject({

@@ -276,9 +276,10 @@ describe("v5 storybook sprite selection", () => {
   });
 
   it("alternates a neutral and a true motion cell in every direction", () => {
-    const motionPhase = Math.PI / (2 * 1.85);
+    const motionPhase = Math.PI / 2;
     expect(storybookUsesMotionFrame(0)).toBe(false);
     expect(storybookUsesMotionFrame(motionPhase)).toBe(true);
+    expect(storybookUsesMotionFrame(2)).toBe(true);
 
     for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
       for (const gender of genders) {
@@ -364,7 +365,7 @@ describe("v5 storybook sprite selection", () => {
     const crawlStep = storybookAnimationFrameForLook(
       look,
       { moving: true, facing: "left", verticalBias: 0 },
-      Math.PI / (2 * 1.85)
+      Math.PI / 2
     );
 
     expect(idle.atlasFamily).toBe("motionBase");
@@ -376,7 +377,7 @@ describe("v5 storybook sprite selection", () => {
   });
 
   it("has valid anchors for all 320 generated motion and seated cells", () => {
-    const motionPhase = Math.PI / (2 * 1.85);
+    const motionPhase = Math.PI / 2;
     const visited = new Set<string>();
     for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
       for (const gender of genders) {
@@ -419,7 +420,7 @@ describe("v5 storybook sprite selection", () => {
   });
 
   it("has valid anchors for all 576 alternate neutral, motion, and seated cells", () => {
-    const motionPhase = Math.PI / (2 * 1.85);
+    const motionPhase = Math.PI / 2;
     const visited = new Set<string>();
     for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
       for (const gender of genders) {

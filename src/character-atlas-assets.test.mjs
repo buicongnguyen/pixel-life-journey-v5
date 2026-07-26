@@ -10,6 +10,17 @@ const ALTERNATE_COLUMNS = 9;
 const BASE_ROWS = 5;
 const EXPANSION_ROWS = 3;
 const ALTERNATE_ROWS = 8;
+const ALTERNATE_BODY_ALIGNMENT_FRACTION = 0.55;
+const ALTERNATE_RUNTIME_HEIGHTS = [
+  72 * 1.15,
+  96 * 1.15,
+  106 * 1.15,
+  116 * 1.15,
+  124 * 1.15,
+  128 * 1.15,
+  126 * 1.15,
+  120 * 1.15,
+];
 const MIN_VISIBLE_PIXELS_PER_CELL = 1_000;
 const atlasDirectory = fileURLToPath(
   new URL("./assets/characters/", import.meta.url)
@@ -316,7 +327,12 @@ function recomputeGroundAnchor(image, row, column) {
   ];
 }
 
-function upperBodyCentroidX(image, row, column) {
+function upperBodyCentroidX(
+  image,
+  row,
+  column,
+  bodyFraction = 0.82
+) {
   const bounds = visibleBoundsInCell(image, row, column);
   if (!bounds) throw new Error(`empty cell ${row}:${column}`);
   const startX = column * CELL_SIZE;
@@ -326,7 +342,9 @@ function upperBodyCentroidX(image, row, column) {
     bounds.minY +
       Math.max(
         1,
-        Math.round((bounds.maxY - bounds.minY) * 0.82)
+        Math.round(
+          (bounds.maxY - bounds.minY) * bodyFraction
+        )
       )
   );
   let totalWeight = 0;
@@ -353,7 +371,8 @@ function recomputeMatchedMotionAnchor(
   neutral,
   row,
   motionColumn,
-  neutralColumn
+  neutralColumn,
+  bodyFraction = 0.82
 ) {
   const motionGround = recomputeGroundAnchor(
     motion,
@@ -366,16 +385,85 @@ function recomputeMatchedMotionAnchor(
     neutralColumn
   );
   const neutralBodyOffset =
-    upperBodyCentroidX(neutral, row, neutralColumn) -
+    upperBodyCentroidX(
+      neutral,
+      row,
+      neutralColumn,
+      bodyFraction
+    ) -
     neutralGround[0];
   return [
     Math.round(
-      (upperBodyCentroidX(motion, row, motionColumn) -
+      (upperBodyCentroidX(
+        motion,
+        row,
+        motionColumn,
+        bodyFraction
+      ) -
         neutralBodyOffset) *
         100
     ) / 100,
     motionGround[1],
   ];
+}
+
+function normalizedHeadPatch(image, row, column) {
+  const bounds = visibleBoundsInCell(image, row, column);
+  if (!bounds) throw new Error(`empty head cell ${row}:${column}`);
+  const cropWidth = bounds.maxX - bounds.minX;
+  const cropHeight = Math.max(
+    1,
+    Math.round((bounds.maxY - bounds.minY) * 0.48)
+  );
+  const patchSize = 96;
+  const result = new Uint8Array(patchSize * patchSize * 3);
+  const background = [38, 56, 74];
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+
+  for (let targetY = 0; targetY < patchSize; targetY += 1) {
+    const sourceY =
+      bounds.minY +
+      Math.min(
+        cropHeight - 1,
+        Math.floor(
+          ((targetY + 0.5) * cropHeight) / patchSize
+        )
+      );
+    for (let targetX = 0; targetX < patchSize; targetX += 1) {
+      const sourceX =
+        bounds.minX +
+        Math.min(
+          cropWidth - 1,
+          Math.floor(
+            ((targetX + 0.5) * cropWidth) / patchSize
+          )
+        );
+      const sourceOffset =
+        ((startY + sourceY) * image.width +
+          startX +
+          sourceX) *
+        4;
+      const targetOffset =
+        (targetY * patchSize + targetX) * 3;
+      const alpha = image.rgba[sourceOffset + 3] / 255;
+      for (let channel = 0; channel < 3; channel += 1) {
+        result[targetOffset + channel] = Math.round(
+          image.rgba[sourceOffset + channel] * alpha +
+            background[channel] * (1 - alpha)
+        );
+      }
+    }
+  }
+  return result;
+}
+
+function meanRgbDifference(first, second) {
+  let difference = 0;
+  for (let index = 0; index < first.length; index += 1) {
+    difference += Math.abs(first[index] - second[index]);
+  }
+  return difference / first.length;
 }
 
 function alphaDifference(
@@ -659,7 +747,8 @@ describe("v5 character atlas assets", () => {
                   image,
                   row,
                   column,
-                  column - 4
+                  column - 4,
+                  ALTERNATE_BODY_ALIGNMENT_FRACTION
                 )
               : recomputeGroundAnchor(image, row, column);
           const recorded = recordedAnchors[row][column];
@@ -671,6 +760,49 @@ describe("v5 character atlas assets", () => {
             recomputed[1],
             `${filename} anchor y ${row}:${column}`
           ).toBe(recorded[1]);
+        }
+
+        const neutralLeft = normalizedHeadPatch(image, row, 1);
+        const neutralRight = normalizedHeadPatch(image, row, 3);
+        const motionLeft = normalizedHeadPatch(image, row, 5);
+        const motionRight = normalizedHeadPatch(image, row, 7);
+        const correctPairing =
+          (meanRgbDifference(neutralLeft, motionLeft) +
+            meanRgbDifference(neutralRight, motionRight)) /
+          2;
+        const swappedPairing =
+          (meanRgbDifference(neutralLeft, motionRight) +
+            meanRgbDifference(neutralRight, motionLeft)) /
+          2;
+        expect(
+          correctPairing,
+          `${filename} literal side pairing ${row}`
+        ).toBeLessThan(swappedPairing * 0.95);
+
+        for (const neutralColumn of [1, 3]) {
+          const motionColumn = neutralColumn + 4;
+          const neutralHeadRoot =
+            upperBodyCentroidX(
+              image,
+              row,
+              neutralColumn,
+              0.42
+            ) - recordedAnchors[row][neutralColumn][0];
+          const motionHeadRoot =
+            upperBodyCentroidX(
+              image,
+              row,
+              motionColumn,
+              0.42
+            ) - recordedAnchors[row][motionColumn][0];
+          const renderedDrift =
+            (Math.abs(neutralHeadRoot - motionHeadRoot) *
+              ALTERNATE_RUNTIME_HEIGHTS[row]) /
+            CELL_SIZE;
+          expect(
+            renderedDrift,
+            `${filename} stable side head ${row}:${neutralColumn}`
+          ).toBeLessThanOrEqual(3);
         }
       }
       for (let offset = 0; offset < image.rgba.length; offset += 4) {
@@ -724,12 +856,21 @@ describe("v5 character atlas assets", () => {
     });
   }
 
-  it("keeps neutral and motion source direction contracts separate", () => {
+  it("keeps an exhaustive reviewed row-level direction repair contract", () => {
     expect(alternateBuilder).toContain(
       "NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL = (0, 3, 2, 1)"
     );
     expect(alternateBuilder).toContain(
       "MOTION_SOURCE_COLUMNS_TO_CANONICAL = (0, 1, 2, 3)"
+    );
+    expect(alternateBuilder).toContain(
+      "SIDE_REPAIR_BY_ATLAS_ROW"
+    );
+    expect(alternateBuilder).toContain(
+      "Expected 37 reviewed side repairs"
+    );
+    expect(alternateBuilder).toContain(
+      "ALTERNATE_BODY_ALIGNMENT_FRACTION = 0.55"
     );
   });
 });

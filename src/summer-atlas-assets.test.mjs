@@ -207,6 +207,30 @@ function differingPixels(image, firstColumn, secondColumn) {
   return difference;
 }
 
+function upperBodyCentroidX(image, column) {
+  const { bounds } = inspectCell(image, column);
+  const startX = column * CELL_SIZE;
+  const bodyBottom = Math.min(
+    bounds.maxY,
+    bounds.minY +
+      Math.max(
+        1,
+        Math.round((bounds.maxY - bounds.minY) * 0.82)
+      )
+  );
+  let totalWeight = 0;
+  let weightedX = 0;
+  for (let y = bounds.minY; y < bodyBottom; y += 1) {
+    for (let x = bounds.minX; x < bounds.maxX; x += 1) {
+      const alpha = pixel(image, startX + x, y)[3];
+      if (alpha <= 64) continue;
+      totalWeight += alpha;
+      weightedX += (x + 0.5) * alpha;
+    }
+  }
+  return weightedX / totalWeight;
+}
+
 describe("summer character atlas assets", () => {
   it("preserves the exact eight gender-separated source sheets", () => {
     expect(
@@ -323,6 +347,18 @@ describe("summer character atlas assets", () => {
           differingPixels(image, facing, facing + 4),
           `${filename} c${facing} has a real walking pose`
         ).toBeGreaterThan(1_000);
+      }
+      for (const facing of [1, 3]) {
+        const neutralRoot =
+          upperBodyCentroidX(image, facing) -
+          anchors.atlases[key][facing][0];
+        const motionRoot =
+          upperBodyCentroidX(image, facing + 4) -
+          anchors.atlases[key][facing + 4][0];
+        expect(
+          Math.abs(neutralRoot - motionRoot),
+          `${filename} side c${facing} stable horizontal root`
+        ).toBeLessThanOrEqual(0.75);
       }
       expect(differingPixels(image, 0, 2)).toBeGreaterThan(1_000);
       expect(differingPixels(image, 1, 3)).toBeGreaterThan(1_000);

@@ -27,7 +27,11 @@ costume, pose, or source image from Sidewalk Iced Tea is included.
   heritage and gender. Its eight rows are baby through elder; its nine columns
   are four neutral directions, four motion directions, and floor-seated front.
   `character-appearance-alternate-anchors.json` records all 576 roots. Classic
-  and alternate are complete identities, not runtime color filters.
+  and alternate are complete identities, not runtime color filters. The
+  alternate builder also applies an explicit, exhaustive per-row side-direction
+  repair map for source sheets whose neutral or motion profiles arrived
+  reversed; it validates that corresponding neutral/motion head and upper-body
+  patches match better than crossed left/right pairs.
 
 The source generations used a strict five-row/four-column turnaround prompt:
 one coherent identity aging through all five rows, with an orthographic front,
@@ -44,7 +48,10 @@ The prompts explicitly forbid chairs, compressed standing poses, gender
 ambiguity, duplicate directions, visible faces in back views, grids, labels,
 cast shadows, and copied characters. Runtime animation alternates the reviewed
 neutral frame with the generated motion frame, producing a real two-frame body
-cycle instead of translating one still image.
+cycle instead of translating one still image. Shared motion rules keep that
+cycle at the engine walk frequency, apply only a small grounded vertical bob,
+and add movement/facing hysteresis so joystick jitter cannot make the body
+rapidly swing between directions.
 
 `scripts/build-character-atlases.py` packs the base sheets.
 `scripts/build-character-stage-expansions.py` performs the same normalization
@@ -61,7 +68,8 @@ working material and are also intentionally not shipped.
 `scripts/build-character-appearance-alternate.py` preflights the complete set
 of 32 gender-separated alternate authoring sheets, normalizes neutral and
 motion art, canonicalizes side directions, combines the eight age bands,
-validates every cell and anchor before publishing, backs up replaced files, and
-switches the manifest last. Handled publication failures restore the previous
-set. The alternate chroma sources also remain working material and are not
-shipped.
+repairs the known row-level side semantics, validates every cell, anchor,
+neutral/motion side pairing, and rendered head alignment before publishing,
+backs up replaced files, and switches the manifest last. Handled publication
+failures restore the previous set. The alternate chroma sources also remain
+working material and are not shipped.

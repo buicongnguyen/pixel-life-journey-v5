@@ -489,16 +489,28 @@ def ground_anchor(cell: Image.Image) -> list[float | int]:
     return [round(weighted_x / retained_weight, 2), bbox[3]]
 
 
-def upper_body_centroid_x(cell: Image.Image) -> float:
+DEFAULT_BODY_ALIGNMENT_FRACTION = 0.82
+
+
+def upper_body_centroid_x(
+    cell: Image.Image,
+    body_fraction: float = DEFAULT_BODY_ALIGNMENT_FRACTION,
+) -> float:
     """Return an alpha-weighted torso/head X center, excluding the stride."""
 
+    if not 0 < body_fraction <= 1:
+        raise ValueError(
+            f"Body alignment fraction must be within (0, 1], got "
+            f"{body_fraction}"
+        )
     alpha = cell.getchannel("A")
     bbox = alpha.getbbox()
     if bbox is None:
         raise ValueError("Cannot derive a body center from an empty cell")
     body_bottom = min(
         bbox[3],
-        bbox[1] + max(1, round((bbox[3] - bbox[1]) * 0.82)),
+        bbox[1]
+        + max(1, round((bbox[3] - bbox[1]) * body_fraction)),
     )
     pixels = alpha.load()
     total_weight = 0
@@ -516,16 +528,22 @@ def upper_body_centroid_x(cell: Image.Image) -> float:
 
 
 def motion_anchor_matched_to_neutral(
-    motion_cell: Image.Image, neutral_cell: Image.Image
+    motion_cell: Image.Image,
+    neutral_cell: Image.Image,
+    body_fraction: float = DEFAULT_BODY_ALIGNMENT_FRACTION,
 ) -> list[float | int]:
     """Keep a motion pose's torso on the neutral pose's world-space root."""
 
     motion_ground = ground_anchor(motion_cell)
     neutral_ground = ground_anchor(neutral_cell)
     neutral_body_offset = (
-        upper_body_centroid_x(neutral_cell) - float(neutral_ground[0])
+        upper_body_centroid_x(neutral_cell, body_fraction)
+        - float(neutral_ground[0])
     )
-    matched_x = upper_body_centroid_x(motion_cell) - neutral_body_offset
+    matched_x = (
+        upper_body_centroid_x(motion_cell, body_fraction)
+        - neutral_body_offset
+    )
     return [round(matched_x, 2), motion_ground[1]]
 
 

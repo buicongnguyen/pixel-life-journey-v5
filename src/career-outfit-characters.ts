@@ -1,4 +1,8 @@
 import careerOutfitManifest from "./assets/career-outfits/career-outfit-anchors.json";
+import {
+  atlasUsesMotionFrame,
+  atlasWalkBob,
+} from "./character-motion";
 import type {
   Gender,
   HeritageStyle,
@@ -190,7 +194,7 @@ export function careerOutfitCharacterFrame(
     ? options.phase ?? 0
     : 0;
   const useMotion =
-    !!options.moving && Math.sin(phase * 1.85) > 0;
+    !!options.moving && atlasUsesMotionFrame(phase);
   return {
     atlasKey: `${entry.pack}-${season}-${supportedHeritage}-${gender}`,
     pack: entry.pack,
@@ -381,10 +385,7 @@ export function drawCareerOutfitCharacter(
   const phase = Number.isFinite(options.phase)
     ? options.phase ?? 0
     : 0;
-  const bob = options.moving
-    ? Math.abs(Math.sin(phase * 1.85)) *
-      Math.max(0.4, size * 0.006)
-    : 0;
+  const bob = options.moving ? atlasWalkBob(phase, size) : 0;
   if (options.shadow !== false) {
     drawGroundShadow(ctx, x, footY, size);
   }

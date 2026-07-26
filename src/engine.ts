@@ -62,6 +62,10 @@ import {
   interactionExpressionsAt,
 } from "./character-interactions";
 import {
+  movementIsActive,
+  stableFacingForVector,
+} from "./character-motion";
+import {
   type Biography,
   type BioChapter,
   listBios,
@@ -3901,13 +3905,17 @@ export class Game {
       dy /= mag;
       mag = 1;
     } // cap keyboard diagonals + stick overshoot at full speed
-    this.moving = mag > 0.12; // a small dead-zone so a resting thumb doesn't drift
+    // Hysteresis keeps a resting thumb from flickering between idle and walk.
+    this.moving = movementIsActive(mag, this.moving);
     if (this.moving) {
       const nx = dx / mag;
       const ny = dy / mag;
       this.verticalBias = ny;
-      if (Math.abs(nx) > 0.15) this.facing = nx < 0 ? "left" : "right";
-      else this.facing = ny < -0.15 ? "back" : "front";
+      this.facing = stableFacingForVector(
+        this.facing,
+        nx,
+        ny
+      );
       const sp = SPEED * this.speedFactor(); // study & smarts make you nimbler
       this.px += dx * sp * dt; // dx/dy carry the analog magnitude → variable speed
       this.py += dy * sp * dt;

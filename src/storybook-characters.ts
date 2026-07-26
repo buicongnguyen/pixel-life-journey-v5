@@ -7,6 +7,10 @@ import groundAnchorManifest from "./assets/characters/character-anchors.json";
 import expansionGroundAnchorManifest from "./assets/characters/character-stage-expansion-anchors.json";
 import motionGroundAnchorManifest from "./assets/characters/character-motion-anchors.json";
 import alternateGroundAnchorManifest from "./assets/characters/character-appearance-alternate-anchors.json";
+import {
+  atlasUsesMotionFrame,
+  atlasWalkBob,
+} from "./character-motion";
 import type {
   CharacterAppearanceId,
   Gender,
@@ -473,7 +477,7 @@ function staticAtlasFamily(
 
 /** The generated step pose occupies the positive half of each walk cycle. */
 export function storybookUsesMotionFrame(walkPhase: number): boolean {
-  return Math.sin(walkPhase * 1.85) > 0;
+  return atlasUsesMotionFrame(walkPhase);
 }
 
 /**
@@ -786,8 +790,7 @@ export function drawStorybookCharacter(
   const bob = seated
     ? 0
     : motion.moving
-    ? Math.abs(Math.sin(walkPhase * 1.85)) *
-      Math.max(0.4, height * 0.006)
+    ? atlasWalkBob(walkPhase, height)
     : Math.sin(walkPhase * 0.7) * Math.max(0.35, height * 0.004);
   const scaleX = width / CELL_SIZE;
   const scaleY = height / CELL_SIZE;

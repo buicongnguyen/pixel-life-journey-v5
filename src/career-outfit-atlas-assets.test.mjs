@@ -261,6 +261,35 @@ function differingPixels(first, second, row, column) {
   return difference;
 }
 
+function upperBodyCentroidX(image, row, column) {
+  const { bounds } = inspectCell(image, row, column);
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  const bodyBottom = Math.min(
+    bounds.bottom,
+    bounds.top +
+      Math.max(
+        1,
+        Math.round((bounds.bottom - bounds.top) * 0.82)
+      )
+  );
+  let totalWeight = 0;
+  let weightedX = 0;
+  for (let y = bounds.top; y < bodyBottom; y += 1) {
+    for (let x = bounds.left; x < bounds.right; x += 1) {
+      const alpha = pixel(
+        image,
+        startX + x,
+        startY + y
+      )[3];
+      if (alpha <= 64) continue;
+      totalWeight += alpha;
+      weightedX += (x + 0.5) * alpha;
+    }
+  }
+  return weightedX / totalWeight;
+}
+
 describe("career outfit atlas manifest", () => {
   it("records the exact schema, packs, identities, seasons, and columns", () => {
     expect(Object.keys(manifest).sort()).toEqual(
@@ -393,6 +422,19 @@ describe("career outfit atlas pixels and anchors", () => {
           expect(anchor[0]).toBeLessThanOrEqual(251);
           expect(anchor[1]).toBeGreaterThanOrEqual(249);
           expect(anchor[1]).toBeLessThanOrEqual(252);
+        }
+
+        for (const facing of [1, 3]) {
+          const neutralRoot =
+            upperBodyCentroidX(image, row, facing) -
+            anchorRows[row][facing][0];
+          const motionRoot =
+            upperBodyCentroidX(image, row, facing + 4) -
+            anchorRows[row][facing + 4][0];
+          expect(
+            Math.abs(neutralRoot - motionRoot),
+            `${file} r${row} side c${facing} stable horizontal root`
+          ).toBeLessThanOrEqual(0.75);
         }
       }
     });

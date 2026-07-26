@@ -1,4 +1,8 @@
 import occupationAnchorManifest from "./assets/occupations/occupation-anchors.json";
+import {
+  atlasUsesMotionFrame,
+  atlasWalkBob,
+} from "./character-motion";
 import type {
   Gender,
   HeritageStyle,
@@ -225,7 +229,7 @@ export function occupationCharacterFrame(
     ? motion.phase ?? 0
     : 0;
   const useMotion =
-    !!motion.moving && Math.sin(phase * 1.85) > 0;
+    !!motion.moving && atlasUsesMotionFrame(phase);
   return {
     atlasKey: `${uniform}-${supportedHeritage}-${gender}`,
     ageBand: ANCHORS.ageBands[uniform],
@@ -392,10 +396,7 @@ export function drawOccupationCharacter(
   const phase = Number.isFinite(options.phase)
     ? options.phase ?? 0
     : 0;
-  const bob = options.moving
-    ? Math.abs(Math.sin(phase * 1.85)) *
-      Math.max(0.4, size * 0.006)
-    : 0;
+  const bob = options.moving ? atlasWalkBob(phase, size) : 0;
   if (options.shadow !== false) {
     drawGroundShadow(ctx, x, footY, size);
   }
