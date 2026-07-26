@@ -61,6 +61,7 @@ export const STAGES: Stage[] = [
     blurb: "Just born! Drink, sleep, and soak up your family's love.",
     theme: themes.nursery,
     scene: "nursery",
+    upperScenes: ["nurseryGarden"],
     options: [
       { id: "milk", label: "Milk", icon: "🍼", desc: "Drink lots of milk — builds a strong, healthy body.", category: "food", effects: { health: 8, happiness: 4 }, storyTag: "milk" },
       { id: "nap", label: "Nap", icon: "😴", desc: "Sleep soundly. Babies grow in their sleep.", category: "rest", effects: { health: 7, fun: 2 }, storyTag: "sleep_baby" },
