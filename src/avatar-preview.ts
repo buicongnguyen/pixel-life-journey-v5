@@ -1,6 +1,16 @@
 import { avatarLook, drawCharacter, personLook } from "./sprites";
 import type { AvatarFacing } from "./sprites";
-import type { Gender, HeritageStyle, PersonKind } from "./types";
+import {
+  drawStorybookPet,
+  warmStorybookPetAtlases,
+  type PetFacing,
+} from "./storybook-pets";
+import type {
+  CharacterAppearanceId,
+  Gender,
+  HeritageStyle,
+  PersonKind,
+} from "./types";
 
 const maybeCanvas = document.getElementById("preview");
 if (!(maybeCanvas instanceof HTMLCanvasElement)) {
@@ -37,6 +47,11 @@ const stages = [
   "senior",
   "retirement",
 ];
+const searchParams = new URLSearchParams(location.search);
+const requestedAppearance: CharacterAppearanceId =
+  searchParams.get("variant") === "alternate"
+    ? "alternate"
+    : "classic";
 const firstColumnX = 162;
 const columnGap = 118;
 
@@ -224,13 +239,93 @@ function renderMatrix(): void {
     lane(footY, heritage.label);
     cases.forEach((entry, column) => {
       const x = 105 + column * 198;
-      drawCharacter(ctx, x, footY, avatarLook(entry.stage, entry.gender, heritage.id), column * 0.85, {
+      drawCharacter(ctx, x, footY, avatarLook(
+        entry.stage,
+        entry.gender,
+        heritage.id,
+        requestedAppearance
+      ), column * 0.85, {
         moving: entry.moving,
         facing: entry.facing,
         verticalBias: 0,
         pose: entry.pose,
       });
       label(entry.label, x, footY + 42);
+    });
+  });
+}
+
+/**
+ * Compare the two complete player/NPC identities without mixing gender sheets.
+ * Use `?variants&stage=0..11` to inspect a particular life stage.
+ */
+function renderVariants(): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawHeader();
+  const rawStageValue = searchParams.get("stage");
+  const stageValue =
+    rawStageValue === null ? Number.NaN : Number(rawStageValue);
+  const stage =
+    Number.isInteger(stageValue) &&
+    stageValue >= 0 &&
+    stageValue < stages.length
+      ? stageValue
+      : 5;
+  const heritages: { id: HeritageStyle; label: string }[] = [
+    { id: "western", label: "Western" },
+    { id: "asian", label: "Asian" },
+    { id: "middleEastern", label: "Middle Eastern" },
+    { id: "black", label: "Black / African diaspora" },
+  ];
+  const entries: {
+    gender: Gender;
+    appearance: CharacterAppearanceId;
+    facing: AvatarFacing;
+  }[] = [];
+  for (const gender of ["male", "female"] as const) {
+    for (const appearance of ["classic", "alternate"] as const) {
+      entries.push(
+        { gender, appearance, facing: "front" },
+        { gender, appearance, facing: "right" }
+      );
+    }
+  }
+
+  label(
+    `Appearance comparison · ${stages[stage]} · male and female atlases remain separate`,
+    width / 2,
+    102
+  );
+  heritages.forEach((heritage, row) => {
+    const footY = 260 + row * 220;
+    lane(footY, heritage.label);
+    entries.forEach((entry, column) => {
+      const x = 110 + column * 195;
+      drawCharacter(
+        ctx,
+        x,
+        footY,
+        avatarLook(
+          stage,
+          entry.gender,
+          heritage.id,
+          entry.appearance
+        ),
+        1.2,
+        {
+          moving: entry.facing !== "front",
+          facing: entry.facing,
+          verticalBias: 0,
+        }
+      );
+      label(
+        `${entry.gender === "female" ? "girl" : "boy"} · ${
+          entry.appearance === "alternate" ? "new" : "classic"
+        } · ${entry.facing}`,
+        x,
+        footY + 46
+      );
     });
   });
 }
@@ -288,7 +383,7 @@ function renderMotion(now: number): void {
     102
   );
   heritages.forEach((heritage, row) => {
-    const footY = 275 + row * 225;
+    const footY = 260 + row * 220;
     lane(footY, heritage.label);
     (["male", "female"] as const).forEach((gender, genderIndex) => {
       const groupStart = genderIndex === 0 ? 115 : 895;
@@ -298,7 +393,12 @@ function renderMotion(now: number): void {
           ctx,
           x,
           footY,
-          avatarLook(stage, gender, heritage.id),
+          avatarLook(
+            stage,
+            gender,
+            heritage.id,
+            requestedAppearance
+          ),
           phase,
           { moving: true, facing, verticalBias: 0 }
         );
@@ -309,7 +409,12 @@ function renderMotion(now: number): void {
         ctx,
         seatedX,
         footY,
-        avatarLook(stage, gender, heritage.id),
+        avatarLook(
+          stage,
+          gender,
+          heritage.id,
+          requestedAppearance
+        ),
         phase,
         {
           moving: false,
@@ -323,7 +428,81 @@ function renderMotion(now: number): void {
   });
 }
 
+function renderPets(now: number): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#7fd8ff";
+  ctx.fillRect(0, 0, width, 86);
+  ctx.fillStyle = "#172738";
+  ctx.font = "bold 29px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Pet Preview: four directions, two walk beats, and real sitting", 36, 34);
+  ctx.font = "16px Arial";
+  ctx.fillText(
+    "Dog and cat are independent atlases · 1.8× inspection grid · animated samples at gameplay size",
+    36,
+    66
+  );
+
+  const facings: PetFacing[] = ["front", "left", "back", "right"];
+  const states = [
+    { label: "idle", moving: false, phase: 0, sitting: false },
+    { label: "walk A", moving: true, phase: 0, sitting: false },
+    { label: "walk B", moving: true, phase: Math.PI, sitting: false },
+    { label: "seated", moving: false, phase: 0, sitting: true },
+  ] as const;
+  const species = [
+    { kind: "dog", title: "Caramel puppy" },
+    { kind: "cat", title: "Slate-blue kitten" },
+  ] as const;
+  const columnX = [215, 555, 895, 1235];
+
+  species.forEach((entry, speciesIndex) => {
+    const top = 112 + speciesIndex * 430;
+    ctx.fillStyle =
+      speciesIndex === 0
+        ? "rgba(244,190,69,0.10)"
+        : "rgba(127,216,255,0.09)";
+    ctx.fillRect(34, top - 18, width - 68, 410);
+    label(entry.title, 54, top, "left");
+
+    facings.forEach((facing, column) => {
+      label(facing, columnX[column], top + 28);
+      states.forEach((state, row) => {
+        const footY = top + 130 + row * 86;
+        ctx.save();
+        ctx.translate(columnX[column], footY);
+        ctx.scale(1.8, 1.8);
+        drawStorybookPet(ctx, 0, 0, entry.kind, {
+          facing,
+          moving: state.moving,
+          phase: state.phase,
+          sitting: state.sitting,
+        });
+        ctx.restore();
+        if (column === 0) {
+          label(state.label, 92, footY - 12, "left");
+        }
+      });
+    });
+
+    const animatedX = 1490;
+    const animatedY = top + 116;
+    drawStorybookPet(ctx, animatedX, animatedY, entry.kind, {
+      facing: facings[Math.floor(now / 1800) % facings.length],
+      moving: true,
+      phase: now / 160,
+    });
+    label("1×", animatedX, animatedY + 42);
+  });
+}
+
 function render(): void {
+  if (location.search.includes("variants")) {
+    renderVariants();
+    return;
+  }
   if (location.search.includes("matrix")) {
     renderMatrix();
     return;
@@ -353,7 +532,14 @@ function render(): void {
   drawMovementRow(895);
 }
 
-if (location.search.includes("motion")) {
+if (location.search.includes("pets")) {
+  void warmStorybookPetAtlases();
+  const animate = (now: number): void => {
+    renderPets(now);
+    window.requestAnimationFrame(animate);
+  };
+  window.requestAnimationFrame(animate);
+} else if (location.search.includes("motion")) {
   const animate = (now: number): void => {
     renderMotion(now);
     window.requestAnimationFrame(animate);

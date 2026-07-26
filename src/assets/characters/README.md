@@ -23,6 +23,11 @@ costume, pose, or source image from Sidewalk Iced Tea is included.
   turns. Motion cells use `character-motion-anchors.json`; the four movement
   roots are aligned to the corresponding neutral frame, and seated roots are
   centered on the same world ground line.
+- The optional `alternate` appearance uses one unified `2304 × 2048` atlas per
+  heritage and gender. Its eight rows are baby through elder; its nine columns
+  are four neutral directions, four motion directions, and floor-seated front.
+  `character-appearance-alternate-anchors.json` records all 576 roots. Classic
+  and alternate are complete identities, not runtime color filters.
 
 The source generations used a strict five-row/four-column turnaround prompt:
 one coherent identity aging through all five rows, with an orthographic front,
@@ -52,3 +57,11 @@ the flat chroma key and unmistakable detached shadow fragments, normalizes
 scale against the matching neutral age/direction, writes all 320 motion/seated
 anchors, and validates every populated cell. Motion source generations remain
 working material and are also intentionally not shipped.
+
+`scripts/build-character-appearance-alternate.py` preflights the complete set
+of 32 gender-separated alternate authoring sheets, normalizes neutral and
+motion art, canonicalizes side directions, combines the eight age bands,
+validates every cell and anchor before publishing, backs up replaced files, and
+switches the manifest last. Handled publication failures restore the previous
+set. The alternate chroma sources also remain working material and are not
+shipped.

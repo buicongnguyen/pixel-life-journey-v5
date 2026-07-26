@@ -13,6 +13,13 @@ export type StatKey = "health" | "happiness" | "fun" | "smarts";
 
 export type Stats = Record<StatKey, number>;
 
+/**
+ * A complete, gender-separated storybook identity across every age and pose.
+ * "classic" preserves all existing saves; "alternate" supplies the new hair,
+ * wardrobe, footwear, and bag designs.
+ */
+export type CharacterAppearanceId = "classic" | "alternate";
+
 /** Loose grouping used for icon tinting and balance reasoning. */
 export type OptionCategory =
   | "health"

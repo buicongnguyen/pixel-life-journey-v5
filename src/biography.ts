@@ -1,4 +1,11 @@
-import type { Gender, LifeOption, OptionCategory, Stats } from "./types";
+import type {
+  CharacterAppearanceId,
+  Gender,
+  HeritageStyle,
+  LifeOption,
+  OptionCategory,
+  Stats,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Biography mode: turn the game into a tool for telling a REAL life story.
@@ -20,6 +27,8 @@ export interface Biography {
   /** The person this life belongs to. */
   name: string;
   gender: Gender;
+  heritage: HeritageStyle;
+  appearance: CharacterAppearanceId;
   /** A subtitle, e.g. "My grandfather · 1938–2016". */
   subtitle: string;
   /** Custom chapters keyed by the default stage id (newborn, toddler, …). */
@@ -53,10 +62,19 @@ function normalizeBio(b: unknown): Biography | null {
         : [];
     chapters[k] = { ...(c && typeof c.title === "string" ? { title: c.title } : {}), moments };
   }
+  const heritage: HeritageStyle =
+    o.heritage === "asian" ||
+    o.heritage === "middleEastern" ||
+    o.heritage === "black"
+      ? o.heritage
+      : "western";
   return {
     id: String(o.id ?? ""),
     name: String(o.name ?? ""),
     gender: o.gender === "female" ? "female" : "male",
+    heritage,
+    appearance:
+      o.appearance === "alternate" ? "alternate" : "classic",
     subtitle: String(o.subtitle ?? ""),
     chapters,
     createdAt: Number(o.createdAt) || 0,
@@ -147,5 +165,14 @@ export function makeMoment(idSeed: string, text: string, presetKey: string): Lif
 
 /** A fresh, empty biography draft. */
 export function newBiography(idSeed: string, gender: Gender = "male"): Biography {
-  return { id: "bio_" + idSeed, name: "", gender, subtitle: "", chapters: {}, createdAt: 0 };
+  return {
+    id: "bio_" + idSeed,
+    name: "",
+    gender,
+    heritage: "western",
+    appearance: "classic",
+    subtitle: "",
+    chapters: {},
+    createdAt: 0,
+  };
 }

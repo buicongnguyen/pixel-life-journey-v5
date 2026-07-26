@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 const CELL_SIZE = 256;
 const COLUMNS = 4;
 const MOTION_COLUMNS = 5;
+const ALTERNATE_COLUMNS = 9;
 const BASE_ROWS = 5;
 const EXPANSION_ROWS = 3;
+const ALTERNATE_ROWS = 8;
 const MIN_VISIBLE_PIXELS_PER_CELL = 1_000;
 const atlasDirectory = fileURLToPath(
   new URL("./assets/characters/", import.meta.url)
@@ -52,6 +54,22 @@ const expectedMotionExpansionAtlases = [
   "character-motion-expansion-western-female.png",
   "character-motion-expansion-western-male.png",
 ];
+const expectedAlternateAtlases = [
+  "character-appearance-alternate-asian-female.png",
+  "character-appearance-alternate-asian-male.png",
+  "character-appearance-alternate-black-female.png",
+  "character-appearance-alternate-black-male.png",
+  "character-appearance-alternate-middleEastern-female.png",
+  "character-appearance-alternate-middleEastern-male.png",
+  "character-appearance-alternate-western-female.png",
+  "character-appearance-alternate-western-male.png",
+];
+const alternateAnchorManifest = JSON.parse(
+  readFileSync(
+    `${atlasDirectory}/character-appearance-alternate-anchors.json`,
+    "utf8"
+  )
+);
 const pngSignature = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
@@ -207,6 +225,71 @@ function visibleBoundsInCell(image, row, column) {
     : { minX, minY, maxX: maxX + 1, maxY: maxY + 1 };
 }
 
+function recomputeGroundAnchor(image, row, column) {
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  let minX = CELL_SIZE;
+  let minY = CELL_SIZE;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < CELL_SIZE; y += 1) {
+    for (let x = 0; x < CELL_SIZE; x += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) * 4 + 3
+        ];
+      if (alpha === 0) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (maxX < 0) throw new Error(`empty cell ${row}:${column}`);
+  const bboxBottom = maxY + 1;
+  const bandHeight = Math.max(
+    8,
+    Math.round((bboxBottom - minY) * 0.125)
+  );
+  const bandTop = Math.max(minY, bboxBottom - bandHeight);
+  const weightedColumns = [];
+  for (let x = minX; x <= maxX; x += 1) {
+    let weight = 0;
+    for (let y = bandTop; y < bboxBottom; y += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) * 4 + 3
+        ];
+      if (alpha > 64) weight += alpha;
+    }
+    if (weight) weightedColumns.push([x + 0.5, weight]);
+  }
+  const totalWeight = weightedColumns.reduce(
+    (sum, [, weight]) => sum + weight,
+    0
+  );
+  const lowerBound = totalWeight * 0.12;
+  const upperBound = totalWeight * 0.88;
+  let cumulative = 0;
+  let retainedWeight = 0;
+  let weightedX = 0;
+  for (const [x, weight] of weightedColumns) {
+    const nextCumulative = cumulative + weight;
+    const retained = Math.max(
+      0,
+      Math.min(nextCumulative, upperBound) -
+        Math.max(cumulative, lowerBound)
+    );
+    weightedX += x * retained;
+    retainedWeight += retained;
+    cumulative = nextCumulative;
+  }
+  return [
+    Math.round((weightedX / retainedWeight) * 100) / 100,
+    bboxBottom,
+  ];
+}
+
 describe("v5 character atlas assets", () => {
   it("checks in exactly the eight expected runtime atlases", () => {
     const actualAtlases = readdirSync(atlasDirectory)
@@ -355,5 +438,109 @@ describe("v5 character atlas assets", () => {
         expect(opaqueChromaPixels).toBe(0);
       });
     }
+  }
+
+  it("checks in exactly the eight alternate appearance atlases", () => {
+    const actualAtlases = readdirSync(atlasDirectory)
+      .filter((name) =>
+        /^character-appearance-alternate-.*\.png$/.test(name)
+      )
+      .sort();
+    expect(actualAtlases).toEqual(expectedAlternateAtlases);
+    expect(alternateAnchorManifest.rows).toHaveLength(ALTERNATE_ROWS);
+    expect(alternateAnchorManifest.columns).toHaveLength(
+      ALTERNATE_COLUMNS
+    );
+  });
+
+  for (const filename of expectedAlternateAtlases) {
+    it(`${filename} is a clean populated 9 x 8 unified atlas`, () => {
+      const image = decodeRgbaPng(`${atlasDirectory}/${filename}`);
+      const atlasKey = filename
+        .slice("character-appearance-alternate-".length)
+        .replace(/\.png$/, "");
+      const recordedAnchors =
+        alternateAnchorManifest.atlases[atlasKey];
+      expect(recordedAnchors).toHaveLength(ALTERNATE_ROWS);
+      expect([image.width, image.height]).toEqual([
+        ALTERNATE_COLUMNS * CELL_SIZE,
+        ALTERNATE_ROWS * CELL_SIZE,
+      ]);
+
+      const populatedCells = [];
+      let opaqueChromaPixels = 0;
+      for (let row = 0; row < ALTERNATE_ROWS; row += 1) {
+        for (
+          let column = 0;
+          column < ALTERNATE_COLUMNS;
+          column += 1
+        ) {
+          const visiblePixels = visiblePixelsInCell(
+            image,
+            row,
+            column
+          );
+          const bounds = visibleBoundsInCell(image, row, column);
+          if (visiblePixels >= 500) {
+            populatedCells.push(`${row}:${column}`);
+          }
+          expect(bounds).toBeDefined();
+          expect(bounds.minX).toBeGreaterThanOrEqual(5);
+          expect(bounds.minY).toBeGreaterThanOrEqual(5);
+          expect(bounds.maxX).toBeLessThanOrEqual(CELL_SIZE - 5);
+          expect(bounds.maxY).toBeLessThanOrEqual(CELL_SIZE - 5);
+          if (column >= 4 && column <= 7) {
+            const neutralBounds = visibleBoundsInCell(
+              image,
+              row,
+              column - 4
+            );
+            expect(neutralBounds).toBeDefined();
+            const motionHeight = bounds.maxY - bounds.minY;
+            const neutralHeight =
+              neutralBounds.maxY - neutralBounds.minY;
+            expect(motionHeight / neutralHeight).toBeGreaterThanOrEqual(
+              0.98
+            );
+            expect(motionHeight / neutralHeight).toBeLessThanOrEqual(
+              1.05
+            );
+          }
+          const recomputed = recomputeGroundAnchor(
+            image,
+            row,
+            column
+          );
+          const recorded = recordedAnchors[row][column];
+          expect(
+            Math.abs(recomputed[0] - recorded[0]),
+            `${filename} anchor x ${row}:${column}`
+          ).toBeLessThanOrEqual(0.75);
+          expect(
+            recomputed[1],
+            `${filename} anchor y ${row}:${column}`
+          ).toBe(recorded[1]);
+        }
+      }
+      for (let offset = 0; offset < image.rgba.length; offset += 4) {
+        const red = image.rgba[offset];
+        const green = image.rgba[offset + 1];
+        const blue = image.rgba[offset + 2];
+        const alpha = image.rgba[offset + 3];
+        if (
+          alpha > 32 &&
+          red > 225 &&
+          blue > 175 &&
+          green < 65 &&
+          Math.min(red, blue) - green > 125
+        ) {
+          opaqueChromaPixels += 1;
+        }
+      }
+      expect(populatedCells).toHaveLength(
+        ALTERNATE_ROWS * ALTERNATE_COLUMNS
+      );
+      expect(opaqueChromaPixels).toBe(0);
+    });
   }
 });

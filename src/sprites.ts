@@ -1,9 +1,24 @@
-import type { Gender, HeritageStyle, HouseTier, PersonKind, PetKind, RoomTheme, SceneKind, UpperSceneKind, VehicleTier } from "./types";
+import type {
+  CharacterAppearanceId,
+  Gender,
+  HeritageStyle,
+  HouseTier,
+  PersonKind,
+  PetKind,
+  RoomTheme,
+  SceneKind,
+  UpperSceneKind,
+  VehicleTier,
+} from "./types";
 import { drawCuteCharacter } from "./cute-characters";
 import {
   drawStorybookCharacter,
   storybookVisualHeight,
 } from "./storybook-characters";
+import {
+  drawStorybookPet,
+  type PetFacing,
+} from "./storybook-pets";
 
 // ---------------------------------------------------------------------------
 // All drawing. The canvas is supersampled (see ui.ts) and rendered smoothly, so
@@ -651,6 +666,7 @@ function drawBabyBackHeadShape(ctx: CanvasRenderingContext2D, hcx: number, hcy: 
 export interface AvatarLook {
   /** Exact v5 life-stage profile used to select generated storybook art. */
   lifeStageIndex: number;
+  appearance: CharacterAppearanceId;
   heightPx: number;
   headRatio: number;
   chub: number;
@@ -828,7 +844,12 @@ function pick<T>(items: T[], i: number): T {
   return items[Math.abs(i) % items.length];
 }
 
-export function avatarLook(stageIndex: number, gender: Gender = "male", heritage: HeritageStyle = "western"): AvatarLook {
+export function avatarLook(
+  stageIndex: number,
+  gender: Gender = "male",
+  heritage: HeritageStyle = "western",
+  appearance: CharacterAppearanceId = "classic"
+): AvatarLook {
   const i = Math.max(0, Math.min(STAGE_PROFILES.length - 1, stageIndex));
   const p = STAGE_PROFILES[i];
   const female = gender === "female";
@@ -846,6 +867,7 @@ export function avatarLook(stageIndex: number, gender: Gender = "male", heritage
   return {
     ...p,
     lifeStageIndex: i,
+    appearance,
     skin: palette.skin,
     hair,
     hairTexture: palette.texture,
@@ -885,7 +907,13 @@ const PERSON_PROFILE: Record<
   elder: 11,
 };
 
-export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: number, heritage: HeritageStyle = "western"): AvatarLook {
+export function personLook(
+  kind: PersonKind,
+  playerGender: Gender,
+  stageIndex?: number,
+  heritage: HeritageStyle = "western",
+  appearance: CharacterAppearanceId = "classic"
+): AvatarLook {
   const opp: Gender = playerGender === "female" ? "male" : "female";
   type Spec = { g: Gender; age: keyof typeof PERSON_PROFILE; hair: string; shirt: string };
   const map: Record<PersonKind, Spec> = {
@@ -959,6 +987,7 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
   return {
     ...p,
     lifeStageIndex: profileIndex,
+    appearance,
     skin: palette.skin,
     hair: ageAwareHair,
     hairTexture: palette.texture,
@@ -2885,10 +2914,17 @@ const PERSON_LABEL: Record<PersonKind, string> = {
 
 export interface PersonDrawOptions {
   seated?: boolean;
+  appearance?: CharacterAppearanceId;
 }
 
 export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: number, kind: PersonKind, playerGender: Gender, label: string, focused: boolean, used: boolean, t: number, stageIndex?: number, heritage: HeritageStyle = "western", options: PersonDrawOptions = {}): void {
-  const look = personLook(kind, playerGender, stageIndex, heritage);
+  const look = personLook(
+    kind,
+    playerGender,
+    stageIndex,
+    heritage,
+    options.appearance
+  );
   const seated = !!options.seated;
   ctx.save();
   if (used) ctx.globalAlpha = 0.5;
@@ -2964,7 +3000,15 @@ export function drawRoom(ctx: CanvasRenderingContext2D, theme: RoomTheme, W: num
   drawFamilyArea(ctx, decor.scene, theme, W, splitY, H, t);
   drawOwnedVehicles(ctx, W, splitY, decor.ownedVehicles, t);
   drawOwnedHomeExterior(ctx, W, splitY, decor.ownedHome);
-  if (decor.atHome && decor.homeQuality > 0) drawHomeQuality(ctx, theme, W, splitY + 70, decor.homeQuality);
+  if (decor.atHome && decor.homeQuality > 0) {
+    drawHomeQuality(
+      ctx,
+      theme,
+      W,
+      splitY + 70,
+      decor.homeQuality
+    );
+  }
   drawZoneDivider(ctx, W, splitY);
   drawDoor(ctx, theme, W, H, splitY, doorActive, t);
 }
@@ -4194,7 +4238,10 @@ export function drawEventItem(
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const w = Math.max(54, ctx.measureText(text).width + 12);
-  const ly = footY - 62;
+  const ly =
+    eventId === "puppy" || eventId === "kitten"
+      ? footY - 78
+      : footY - 62;
   ctx.fillStyle = focused ? "rgba(42,22,64,0.96)" : "rgba(18,12,30,0.82)";
   rrect(ctx, x - w / 2, ly - 8, w, 15, 5);
   ctx.fill();
@@ -4209,12 +4256,32 @@ export function drawEventItem(
 
 export interface PetDrawOptions {
   focused?: boolean;
-  facing?: "left" | "right";
+  facing?: PetFacing;
+  moving?: boolean;
+  phase?: number;
   sitting?: boolean;
   shadow?: boolean;
 }
 
 export function drawPet(ctx: CanvasRenderingContext2D, x: number, footY: number, kind: PetKind, t: number, options: PetDrawOptions = {}): void {
+  if (
+    drawStorybookPet(ctx, x, footY, kind, {
+      facing: options.facing,
+      moving: options.moving,
+      phase: options.phase ?? t,
+      sitting: options.sitting,
+      focused: options.focused,
+      shadow: options.shadow,
+    })
+  ) {
+    return;
+  }
+
+  drawLegacyPet(ctx, x, footY, kind, t, options);
+}
+
+/** Loading/error fallback retained so a missing optional atlas never stops play. */
+function drawLegacyPet(ctx: CanvasRenderingContext2D, x: number, footY: number, kind: PetKind, t: number, options: PetDrawOptions): void {
   const dog = kind === "dog";
   const fur = dog ? "#c68148" : "#7d8794";
   const furLight = dog ? "#e6b17a" : "#b8c1cc";

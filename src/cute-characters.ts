@@ -1,4 +1,8 @@
-import type { Gender, HeritageStyle } from "./types";
+import type {
+  CharacterAppearanceId,
+  Gender,
+  HeritageStyle,
+} from "./types";
 
 export type CuteFacing = "front" | "left" | "right" | "back";
 
@@ -12,6 +16,8 @@ export interface CuteCharacterMotion {
 export interface CuteCharacterLook {
   /** Exact v5 life-stage profile used to select generated storybook art. */
   lifeStageIndex?: number;
+  /** Complete storybook identity; omitted legacy looks use "classic". */
+  appearance?: CharacterAppearanceId;
   heightPx: number;
   headRatio: number;
   chub: number;

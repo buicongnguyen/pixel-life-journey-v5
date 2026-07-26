@@ -1589,6 +1589,34 @@ body {
   gap: 16px;
   margin: 16px 0;
 }
+.plj-appearance-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+.plj-appearance-group {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.plj-appearance-group h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+.plj-appearance-group .plj-genders {
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.plj-appearance-group .plj-gender {
+  width: 50%;
+  min-width: 0;
+  padding: 10px 5px;
+  font-size: 12px;
+}
 .plj-setup-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1626,11 +1654,6 @@ body {
 }
 .plj-heritage:hover {
   transform: translateY(-1px);
-}
-.plj-heritage-icon {
-  flex: 0 0 auto;
-  font-size: 17px;
-  line-height: 1;
 }
 .plj-setup-field {
   display: flex;
@@ -1703,6 +1726,15 @@ body {
 .plj-gender:hover {
   border-color: var(--pink);
   transform: translateY(-2px);
+}
+.plj-gender.is-selected {
+  border-color: var(--pink);
+  background: rgba(255, 143, 208, 0.12);
+}
+@media (max-width: 420px) {
+  .plj-appearance-groups {
+    grid-template-columns: 1fr;
+  }
 }
 .plj-gender-face {
   font-size: 40px;

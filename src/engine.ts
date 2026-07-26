@@ -1,4 +1,5 @@
 import type {
+  CharacterAppearanceId,
   Gender,
   HeritageStyle,
   HistoryEntry,
@@ -59,7 +60,11 @@ import {
   newBiography,
 } from "./biography";
 import { avatarLook, drawAvatar, drawEventItem, drawPerson, drawPet, drawRoom, drawStation, type AvatarFacing } from "./sprites";
-import { warmStorybookCharacterAtlases } from "./storybook-characters";
+import {
+  warmStorybookCharacterAtlases,
+  warmStorybookSetupAtlases,
+} from "./storybook-characters";
+import { warmStorybookPetAtlases } from "./storybook-pets";
 import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
@@ -119,6 +124,15 @@ const PET_HAPPY_R = 34;
 const PET_HAPPY_COOLDOWN = 6;
 const CAT_PURR_HAPPY = 0.2;
 const CAT_PURR_INTERVAL = 5;
+const PET_FOLLOW_OFFSETS: Record<
+  AvatarFacing,
+  readonly [number, number]
+> = {
+  left: [30, 8],
+  right: [-30, 8],
+  front: [0, -30],
+  back: [0, 30],
+};
 const BAD_SOCIAL_TAGS = ["smoker_friend", "gangster_friend", "playboy_friend"];
 const INVENTORY_MAX_SLOTS = 8;
 const INVENTORY_MAX_COUNT = 9;
@@ -145,11 +159,11 @@ const VEHICLE_DEPRECIATION = 0.12;
 const LIFE_SPEED_DEFAULT_INDEX = LIFE_SPEEDS.indexOf(1);
 const LIFE_SPEED_MIN_INDEX = 0;
 const LIFE_SPEED_MAX_INDEX = LIFE_SPEEDS.length - 1;
-const HERITAGE_OPTIONS: { id: HeritageStyle; label: string; icon: string }[] = [
-  { id: "western", label: "Western", icon: "🌎" },
-  { id: "asian", label: "Asian", icon: "🏮" },
-  { id: "middleEastern", label: "Middle Eastern", icon: "🕌" },
-  { id: "black", label: "Black / African diaspora", icon: "🌍" },
+const HERITAGE_OPTIONS: { id: HeritageStyle; label: string }[] = [
+  { id: "western", label: "Western" },
+  { id: "asian", label: "Asian" },
+  { id: "middleEastern", label: "Middle Eastern" },
+  { id: "black", label: "Black / African diaspora" },
 ];
 const TRAINING_LINKS = {
   iq: "https://www.youtube.com/results?search_query=how+to+be+smarter+increase+iq",
@@ -1148,6 +1162,8 @@ interface Station {
   opt: LifeOption;
   kind: StationKind;
   zone: StationZone;
+  /** Stable storybook identity for a person station. */
+  appearance?: CharacterAppearanceId;
   /** For surprise world pickups/hazards spawned from events.ts. */
   event?: RandomEvent;
   /** For bad items: which good category satiates it (diet = food, fit = activity). */
@@ -1239,6 +1255,10 @@ interface Snapshot {
   age: number;
   gender: Gender;
   heritage: HeritageStyle;
+  /** Optional only so v5 saves made before appearance variants still load. */
+  appearance?: CharacterAppearanceId;
+  /** Stable per-life seed used to keep NPC looks unchanged across renders. */
+  lifeSeed?: string;
   stats: Stats;
   money: number;
   weight: number;
@@ -1285,6 +1305,8 @@ interface Snapshot {
   petKind: PetKind | null;
   petX: number;
   petY: number;
+  /** Optional so saves created before four-way pet art remain compatible. */
+  petFacing?: AvatarFacing;
   petHappyCd: number;
   eventsLog: string[];
   healthSum: number;
@@ -1312,16 +1334,19 @@ interface FloatText {
   life: number;
 }
 
+function stableHash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 function stableAnswerOrder(seed: string, count: number): number[] {
-  const score = (text: string): number => {
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i++) {
-      h ^= text.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-  };
-  return Array.from({ length: count }, (_, i) => i).sort((a, b) => score(`${seed}:${a}`) - score(`${seed}:${b}`));
+  return Array.from({ length: count }, (_, i) => i).sort(
+    (a, b) => stableHash(`${seed}:${a}`) - stableHash(`${seed}:${b}`)
+  );
 }
 
 export class Game {
@@ -1332,6 +1357,8 @@ export class Game {
   private age = 0;
   private gender: Gender = "male";
   private heritage: HeritageStyle = "western";
+  private appearance: CharacterAppearanceId = "alternate";
+  private lifeSeed = "new-life";
   private lifeSpeed = 1;
   private economicBackground = "comfortable";
   private soundEnabled = localStorage.getItem("plj-v5-sound") !== "off";
@@ -1369,7 +1396,8 @@ export class Game {
   private petKind: PetKind | null = null;
   private petX = 132;
   private petY = 640;
-  private petFacing: "left" | "right" = "right";
+  private petFacing: AvatarFacing = "right";
+  private petMoving = false;
   private petWalkPhase = 0;
   private petHappyCd = 0;
   private spouseDeceased = false;
@@ -1518,6 +1546,8 @@ export class Game {
       partner: this.partner?.id ?? null,
       gender: this.gender,
       heritage: this.heritage,
+      appearance: this.appearance,
+      lifeSeed: this.lifeSeed,
       facing: this.facing,
       weight: Math.round(this.weight),
       health: Math.round(this.stats.health),
@@ -1549,6 +1579,8 @@ export class Game {
         kind: this.petKind,
         x: Math.round(this.petX),
         y: Math.round(this.petY),
+        facing: this.petFacing,
+        moving: this.petMoving,
         happyCooldown: Math.round(this.petHappyCd * 10) / 10,
       } : null,
       events: [...this.eventsLog],
@@ -1673,9 +1705,45 @@ export class Game {
     const save = this.readSavedGame();
     if (!save) return this.showTitle();
     const heritage = this.normalizeHeritage(save.snapshot.heritage);
+    const appearance = this.normalizeAppearance(
+      save.snapshot.appearance
+    );
+    const lifeSeed =
+      typeof save.snapshot.lifeSeed === "string" &&
+      save.snapshot.lifeSeed.trim()
+        ? save.snapshot.lifeSeed.slice(0, 80)
+        : `legacy-${save.savedAt}`;
     save.snapshot.heritage = heritage;
     save.snapshot.gender =
       save.snapshot.gender === "female" ? "female" : "male";
+    save.snapshot.appearance = appearance;
+    save.snapshot.petKind = this.normalizePetKind(
+      save.snapshot.petKind
+    );
+    save.snapshot.petFacing = this.normalizePetFacing(
+      save.snapshot.petFacing
+    );
+    save.snapshot.lifeSeed = lifeSeed;
+    for (const checkpoint of save.timeline) {
+      if (!checkpoint || typeof checkpoint !== "object") continue;
+      checkpoint.heritage = this.normalizeHeritage(checkpoint.heritage);
+      checkpoint.gender =
+        checkpoint.gender === "female" ? "female" : "male";
+      checkpoint.appearance = this.normalizeAppearance(
+        checkpoint.appearance
+      );
+      checkpoint.petKind = this.normalizePetKind(
+        checkpoint.petKind
+      );
+      checkpoint.petFacing = this.normalizePetFacing(
+        checkpoint.petFacing
+      );
+      checkpoint.lifeSeed =
+        typeof checkpoint.lifeSeed === "string" &&
+        checkpoint.lifeSeed.trim()
+          ? checkpoint.lifeSeed.slice(0, 80)
+          : lifeSeed;
+    }
     if (button) {
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
@@ -1685,7 +1753,17 @@ export class Game {
       // Saved lives may use an atlas that has not been requested on the title
       // screen. Decode the whole heritage pair before gameplay so neither the
       // player nor opposite-gender family briefly flashes the old fallback.
-      await warmStorybookCharacterAtlases(heritage);
+      if (save.snapshot.petKind === "dog" || save.snapshot.petKind === "cat") {
+        void warmStorybookPetAtlases(save.snapshot.petKind);
+      }
+      const ready = await warmStorybookCharacterAtlases(heritage);
+      if (!ready) {
+        if (button?.isConnected) {
+          button.textContent = "Retry character download";
+        }
+        this.hint("Character art could not load. Your save is safe; check your connection and retry.");
+        return;
+      }
       if (button && !button.isConnected) return;
       const stageIndex = save.snapshot.stageIndex;
       const chapterEntry = save.timeline[stageIndex];
@@ -1758,6 +1836,7 @@ export class Game {
   private newGame(keepBiography = false, startStageIndex = 0, familyFundOverride?: number): void {
     if (!keepBiography) this.clearSavedGame();
     if (!keepBiography) this.biography = null; // normal play is never a replay
+    if (!keepBiography) this.lifeSeed = this.createLifeSeed();
     this.lineIndex = {}; // restart the rotating greeting / pickup lines
     const startIndex = keepBiography ? 0 : this.normalizeStageIndex(startStageIndex);
     this.stats = { ...START_STATS };
@@ -1800,6 +1879,7 @@ export class Game {
     this.petX = 132;
     this.petY = 640;
     this.petFacing = "right";
+    this.petMoving = false;
     this.petWalkPhase = 0;
     this.petHappyCd = 0;
     this.spouseDeceased = false;
@@ -1877,6 +1957,8 @@ export class Game {
       age: this.age,
       gender: this.gender,
       heritage: this.heritage,
+      appearance: this.appearance,
+      lifeSeed: this.lifeSeed,
       stats: { ...this.stats },
       money: this.money,
       weight: this.weight,
@@ -1922,6 +2004,7 @@ export class Game {
       petKind: this.petKind,
       petX: this.petX,
       petY: this.petY,
+      petFacing: this.petFacing,
       petHappyCd: this.petHappyCd,
       usedEvents: [...this.usedEvents],
       eventsLog: [...this.eventsLog],
@@ -2034,6 +2117,10 @@ export class Game {
         opt,
         kind: c.kind,
         zone,
+        appearance:
+          c.kind === "person"
+            ? this.appearanceForNpc(opt)
+            : undefined,
         guard: c.guard,
         contactCd: 0,
         satiated: 0,
@@ -2143,7 +2230,20 @@ export class Game {
     if (zone === "social") {
       return { min: SOCIAL_Y_MIN, max: Math.max(SOCIAL_Y_MIN + MIN_ZONE_HEIGHT, splitY - ZONE_GATE_GAP) };
     }
-    return { min: Math.min(FAMILY_Y_MAX - MIN_ZONE_HEIGHT, splitY + ZONE_GATE_GAP), max: FAMILY_Y_MAX };
+    return {
+      min: Math.min(FAMILY_Y_MAX - MIN_ZONE_HEIGHT, splitY + ZONE_GATE_GAP),
+      max: FAMILY_Y_MAX,
+    };
+  }
+
+  private petFacingToward(
+    dx: number,
+    dy: number,
+    fallback: AvatarFacing = this.petFacing
+  ): AvatarFacing {
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return fallback;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
+    return dy < 0 ? "back" : "front";
   }
 
   private placePetInRoom(x = this.px + 86, y = this.py + 48): void {
@@ -2151,7 +2251,11 @@ export class Game {
     const bounds = this.zoneBounds("family");
     this.petX = Math.max(78, Math.min(W - 112, x));
     this.petY = Math.max(bounds.min + 24, Math.min(bounds.max - 4, y));
-    this.petFacing = this.petX > this.px ? "left" : "right";
+    this.petFacing = this.petFacingToward(
+      this.px - this.petX,
+      this.py - this.petY
+    );
+    this.petMoving = false;
   }
 
   private adoptPet(kind: PetKind, x = this.px + 70, y = this.py + 36): void {
@@ -2159,6 +2263,8 @@ export class Game {
     this.petKind = kind;
     this.petHappyCd = 1.6;
     this.petWalkPhase = 0;
+    this.petMoving = false;
+    void warmStorybookPetAtlases(kind);
     this.placePetInRoom(x, y);
   }
 
@@ -2168,9 +2274,14 @@ export class Game {
     const bounds = this.zoneBounds("family");
 
     if (this.petKind === "cat") {
+      this.petMoving = false;
       this.petWalkPhase += dt * 1.2;
       this.petX = Math.max(78, Math.min(W - 112, this.petX));
       this.petY = Math.max(bounds.min + 24, Math.min(bounds.max - 4, this.petY));
+      this.petFacing = this.petFacingToward(
+        this.px - this.petX,
+        this.py - this.petY
+      );
       if (this.petHappyCd <= 0) {
         this.petHappyCd = CAT_PURR_INTERVAL;
         this.applyEff({ happiness: CAT_PURR_HAPPY }, "mental");
@@ -2179,18 +2290,27 @@ export class Game {
       return;
     }
 
-    const targetX = Math.max(78, Math.min(W - 112, this.px + (this.facing === "left" ? 28 : -28)));
-    const targetY = Math.max(bounds.min + 24, Math.min(bounds.max - 4, this.py + 8));
+    const [offsetX, offsetY] = PET_FOLLOW_OFFSETS[this.facing];
+    const targetX = Math.max(
+      78,
+      Math.min(W - 112, this.px + offsetX)
+    );
+    const targetY = Math.max(
+      bounds.min + 24,
+      Math.min(bounds.max - 4, this.py + offsetY)
+    );
     const dx = targetX - this.petX;
     const dy = targetY - this.petY;
     const d = Math.hypot(dx, dy) || 1;
     if (d > 22) {
+      this.petMoving = true;
       const sp = PET_FOLLOW_SPEED * (d > 140 ? 1.25 : 1);
       this.petX += (dx / d) * sp * dt;
       this.petY += (dy / d) * sp * dt;
-      this.petFacing = dx < 0 ? "left" : "right";
+      this.petFacing = this.petFacingToward(dx, dy);
       this.petWalkPhase += dt * 10;
     } else {
+      this.petMoving = false;
       this.petWalkPhase += dt * 3;
     }
 
@@ -2264,6 +2384,24 @@ export class Game {
   private normalizeHeritage(value: string | null | undefined): HeritageStyle {
     const found = HERITAGE_OPTIONS.find((o) => o.id === value);
     return found?.id ?? "western";
+  }
+
+  private normalizePetFacing(
+    value: string | null | undefined,
+    fallback: AvatarFacing = "front"
+  ): AvatarFacing {
+    return value === "left" ||
+      value === "right" ||
+      value === "front" ||
+      value === "back"
+      ? value
+      : fallback;
+  }
+
+  private normalizePetKind(
+    value: string | null | undefined
+  ): PetKind | null {
+    return value === "dog" || value === "cat" ? value : null;
   }
 
   private heritageLabel(): string {
@@ -3163,6 +3301,11 @@ export class Game {
     if (!snap) return;
     this.gender = snap.gender;
     this.heritage = snap.heritage ?? "western";
+    this.appearance = this.normalizeAppearance(snap.appearance);
+    this.lifeSeed =
+      typeof snap.lifeSeed === "string" && snap.lifeSeed.trim()
+        ? snap.lifeSeed
+        : `legacy-stage-${stageIndex}`;
     this.stats = { ...snap.stats };
     this.money = snap.money;
     this.weight = snap.weight;
@@ -3206,11 +3349,15 @@ export class Game {
     this.bigFired = snap.bigFired;
     this.jackpotFired = snap.jackpotFired;
     this.petAdopted = snap.petAdopted;
-    this.petKind = snap.petKind ?? null;
+    this.petKind = this.normalizePetKind(snap.petKind);
     this.petX = snap.petX ?? 132;
     this.petY = snap.petY ?? 640;
     this.petHappyCd = snap.petHappyCd ?? 0;
-    this.petFacing = this.petX > this.px ? "left" : "right";
+    this.petFacing = this.normalizePetFacing(
+      snap.petFacing,
+      this.petX > this.px ? "left" : "right"
+    );
+    this.petMoving = false;
     this.petWalkPhase = 0;
     this.usedEvents = new Set(snap.usedEvents);
     this.eventsLog = [...snap.eventsLog];
@@ -3228,6 +3375,12 @@ export class Game {
     this.skyMessage = null;
     this.clearOverlay();
     this.loadStage(stageIndex, true); // restoring: don't re-sample/re-snapshot the entry
+    if (this.petKind) {
+      this.petFacing = this.normalizePetFacing(
+        snap.petFacing,
+        this.petFacing
+      );
+    }
     this.hint(`⏳ You travelled back to age ${Math.floor(this.age)}.`);
   }
 
@@ -3979,14 +4132,21 @@ export class Game {
       drawables.sort(byDepth);
       for (const d of drawables) {
         if (d.pet && this.petKind) {
-          drawPet(ctx, this.petX, this.petY, this.petKind, t + this.petWalkPhase * 0.08, {
+          drawPet(ctx, this.petX, this.petY, this.petKind, t, {
             facing: this.petFacing,
+            moving: this.petMoving,
+            phase: this.petWalkPhase,
             sitting: this.petKind === "cat",
           });
           continue;
         }
         if (!d.station) {
-          drawAvatar(ctx, this.px, this.py, avatarLook(this.stageIndex, this.gender, this.heritage), this.walkPhase, {
+          drawAvatar(ctx, this.px, this.py, avatarLook(
+            this.stageIndex,
+            this.gender,
+            this.heritage,
+            this.appearance
+          ), this.walkPhase, {
             moving: this.moving,
             facing: this.facing,
             verticalBias: this.verticalBias,
@@ -4018,6 +4178,8 @@ export class Game {
         } else if (st.opt.person) {
           drawPerson(ctx, st.x, st.y, st.opt.person, this.gender, st.opt.label, focused, used, t, this.stageIndex, this.heritage, {
             seated: this.shouldSitWithNewborn(st),
+            appearance:
+              st.appearance ?? this.appearanceForNpc(st.opt),
           });
         } else {
           drawStation(ctx, st.x, st.y, st.opt.icon, st.opt.label, st.opt.category, focused, used, t);
@@ -5430,8 +5592,16 @@ export class Game {
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
       button.textContent = "Loading characters…";
-      await warmStorybookCharacterAtlases(this.heritage);
-      if (this.mode === "title" && button.isConnected) this.showSetup();
+      const ready = await warmStorybookSetupAtlases(this.heritage);
+      if (this.mode !== "title" || !button.isConnected) return;
+      if (ready) {
+        this.showSetup();
+      } else {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        button.textContent = "Retry character download";
+        this.hint("Character art could not load. Check your connection and retry.");
+      }
     };
     this.ui.overlay.querySelector<HTMLButtonElement>("#plj-continue")?.addEventListener("click", (event) => {
       void this.continueSavedGame(event.currentTarget as HTMLButtonElement);
@@ -5452,7 +5622,6 @@ export class Game {
     ).join("");
     const heritageCards = HERITAGE_OPTIONS.map((h) => `
       <button class="plj-heritage${h.id === this.heritage ? " is-selected" : ""}" data-heritage="${h.id}">
-        <span class="plj-heritage-icon">${h.icon}</span>
         <span>${esc(h.label)}</span>
       </button>`).join("");
     this.ui.overlay.innerHTML = `
@@ -5460,11 +5629,24 @@ export class Game {
         <h2>A new life begins…</h2>
         <p class="plj-sub">Name your character (optional) — it shows on your career profile.</p>
         <div class="plj-bio-head"><input id="plj-setup-name" placeholder="Name (optional)" maxlength="40"></div>
-        <p class="plj-sub">Choose a character and begin. You can customize the simulation if you want.</p>
-        <div class="plj-genders">
-          ${this.setupGenderButton("male", this.heritage)}
-          ${this.setupGenderButton("female", this.heritage)}
+        <p class="plj-sub">Choose a player. Each look has its own hairstyle, clothes, shoes and bags throughout life.</p>
+        <div class="plj-appearance-groups" role="group" aria-label="Player character">
+          <section class="plj-appearance-group" aria-label="Boy characters">
+            <h3>Boy</h3>
+            <div class="plj-genders">
+              ${this.setupGenderButton("male", this.heritage, "classic")}
+              ${this.setupGenderButton("male", this.heritage, "alternate")}
+            </div>
+          </section>
+          <section class="plj-appearance-group" aria-label="Girl characters">
+            <h3>Girl</h3>
+            <div class="plj-genders">
+              ${this.setupGenderButton("female", this.heritage, "classic")}
+              ${this.setupGenderButton("female", this.heritage, "alternate")}
+            </div>
+          </section>
         </div>
+        <button class="plj-btn" id="plj-start-life" disabled>Start life as ${this.appearance === "alternate" ? "New style" : "Classic"} ${this.gender === "female" ? "Girl" : "Boy"} →</button>
         <details class="plj-advanced">
           <summary>Advanced life setup</summary>
           <p class="plj-sub">Appearance, economic background, starting chapter and pace.</p>
@@ -5507,36 +5689,89 @@ export class Game {
         void this.prepareSetupCharacterPair(this.heritage);
       };
     });
+    const startLifeButton =
+      this.ui.overlay.querySelector<HTMLButtonElement>("#plj-start-life")!;
     this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender").forEach((btn) => {
-      btn.onclick = async () => {
-        this.playerName = (this.ui.overlay.querySelector<HTMLInputElement>("#plj-setup-name")?.value ?? "").slice(0, 40);
+      btn.onclick = () => {
         this.gender = btn.dataset.g === "female" ? "female" : "male";
+        this.appearance = this.normalizeAppearance(
+          btn.dataset.appearance
+        );
+        this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender").forEach((choice) => {
+          const selected = choice === btn;
+          choice.classList.toggle("is-selected", selected);
+          choice.setAttribute("aria-pressed", String(selected));
+        });
+        startLifeButton.textContent = `Start life as ${
+          this.appearance === "alternate" ? "New style" : "Classic"
+        } ${this.gender === "female" ? "Girl" : "Boy"} →`;
+      };
+    });
+    startLifeButton.onclick = async () => {
+        this.playerName = (this.ui.overlay.querySelector<HTMLInputElement>("#plj-setup-name")?.value ?? "").slice(0, 40);
         this.heritage = this.normalizeHeritage(this.ui.overlay.querySelector<HTMLButtonElement>(".plj-heritage.is-selected")?.dataset.heritage);
         const selectedHeritage = this.heritage;
         const startIndex = this.normalizeStageIndex(Number(this.ui.overlay.querySelector<HTMLSelectElement>("#plj-start-stage")?.value ?? 0));
         this.setLifeSpeedIndex(Number(speedInput.value));
         this.setupFamilyFund = backgroundMoney(this.economicBackground);
         const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
+        const heritageButtons = Array.from(
+          this.ui.overlay.querySelectorAll<HTMLButtonElement>(
+            ".plj-heritage"
+          )
+        );
         genderButtons.forEach((choice) => {
           choice.disabled = true;
           choice.setAttribute("aria-busy", "true");
         });
-        await warmStorybookCharacterAtlases(selectedHeritage);
+        heritageButtons.forEach((choice) => {
+          choice.disabled = true;
+        });
+        startLifeButton.disabled = true;
+        startLifeButton.setAttribute("aria-busy", "true");
+        startLifeButton.textContent = "Loading this life…";
+        const ready =
+          await warmStorybookCharacterAtlases(selectedHeritage);
         if (this.mode !== "setup" || this.heritage !== selectedHeritage) return;
+        if (!ready) {
+          genderButtons.forEach((choice) => {
+            choice.disabled = false;
+            choice.removeAttribute("aria-busy");
+          });
+          heritageButtons.forEach((choice) => {
+            choice.disabled = false;
+          });
+          startLifeButton.disabled = false;
+          startLifeButton.removeAttribute("aria-busy");
+          startLifeButton.textContent = "Retry character download";
+          this.hint("Character art could not load. Check your connection and retry.");
+          return;
+        }
         this.newGame(false, startIndex, this.setupFamilyFund);
-      };
-    });
+    };
     void this.prepareSetupCharacterPair(this.heritage);
   }
 
-  private setupGenderButton(gender: Gender, heritage: HeritageStyle): string {
-    return `<button class="plj-gender" data-g="${gender}">${this.setupGenderAvatar(gender, heritage)}<span>${gender === "female" ? "Girl" : "Boy"}</span></button>`;
+  private setupGenderButton(
+    gender: Gender,
+    heritage: HeritageStyle,
+    appearance: CharacterAppearanceId
+  ): string {
+    const selected =
+      gender === this.gender && appearance === this.appearance;
+    const appearanceLabel =
+      appearance === "alternate" ? "New style" : "Classic";
+    return `<button class="plj-gender${selected ? " is-selected" : ""}" type="button" data-g="${gender}" data-appearance="${appearance}" aria-pressed="${selected}" aria-label="${gender === "female" ? "Girl" : "Boy"}, ${appearanceLabel}">${this.setupGenderAvatar(gender, heritage, appearance)}<span>${appearanceLabel}</span></button>`;
   }
 
-  private setupGenderAvatar(gender: Gender, heritage: HeritageStyle): string {
+  private setupGenderAvatar(
+    gender: Gender,
+    heritage: HeritageStyle,
+    appearance: CharacterAppearanceId
+  ): string {
     // Render the REAL in-game character (teen stage, front view) to a small
     // canvas — the Boy/Girl choices now look exactly like the person you play.
-    const look = avatarLook(5, gender, heritage);
+    const look = avatarLook(5, gender, heritage, appearance);
     const cw = 96;
     const ch = 172;
     const cv = document.createElement("canvas");
@@ -5551,9 +5786,55 @@ export class Game {
   private refreshSetupGenderPreviews(heritage: HeritageStyle): void {
     this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender").forEach((btn) => {
       const gender: Gender = btn.dataset.g === "female" ? "female" : "male";
+      const appearance = this.normalizeAppearance(
+        btn.dataset.appearance
+      );
       const avatar = btn.querySelector<HTMLElement>(".plj-setup-avatar-img");
-      if (avatar) avatar.outerHTML = this.setupGenderAvatar(gender, heritage);
+      if (avatar) {
+        avatar.outerHTML = this.setupGenderAvatar(
+          gender,
+          heritage,
+          appearance
+        );
+      }
     });
+  }
+
+  private normalizeAppearance(
+    value: string | null | undefined
+  ): CharacterAppearanceId {
+    return value === "alternate" ? "alternate" : "classic";
+  }
+
+  private createLifeSeed(): string {
+    try {
+      if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+    } catch {
+      // A deterministic fallback is unnecessary; the result is persisted.
+    }
+    return `${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 12)}`;
+  }
+
+  /** Assign one full identity per NPC and keep it stable for the whole life. */
+  private appearanceForNpc(opt: LifeOption): CharacterAppearanceId {
+    // The opening family always demonstrates both looks, independent of luck.
+    if (opt.person === "mother" || opt.person === "grandpa") {
+      return "alternate";
+    }
+    if (opt.person === "father" || opt.person === "grandma") {
+      return "classic";
+    }
+    if (opt.person === "sibling" || opt.person === "babySibling") {
+      return this.appearance === "classic" ? "alternate" : "classic";
+    }
+    // Option IDs change between chapters ("studyFriend", "exams", ...), but
+    // PersonKind is the recurring identity contract and therefore stays stable.
+    const identity = `${this.lifeSeed}:${opt.person ?? opt.id}`;
+    return stableHash(identity) % 2 === 0 ? "classic" : "alternate";
   }
 
   /**
@@ -5564,6 +5845,12 @@ export class Game {
    */
   private async prepareSetupCharacterPair(heritage: HeritageStyle): Promise<void> {
     const genderButtons = Array.from(this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-gender"));
+    const startButton =
+      this.ui.overlay.querySelector<HTMLButtonElement>("#plj-start-life");
+    if (startButton) {
+      startButton.disabled = true;
+      startButton.title = "Loading character art…";
+    }
     genderButtons.forEach((button) => {
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
@@ -5571,28 +5858,54 @@ export class Game {
       const avatar = button.querySelector<HTMLElement>(".plj-setup-avatar-img");
       if (avatar) avatar.style.opacity = "0.32";
     });
-    await warmStorybookCharacterAtlases(heritage);
+    const ready = await warmStorybookSetupAtlases(heritage);
     if (this.mode !== "setup" || this.heritage !== heritage) return;
+    if (!ready) {
+      genderButtons.forEach((button) => {
+        button.title = "Character art failed to load";
+        button.removeAttribute("aria-busy");
+      });
+      if (startButton) {
+        startButton.textContent = "Character download failed — retry";
+        startButton.title = "Check your connection, then choose this heritage again";
+      }
+      this.hint("Character art could not load. Check your connection and retry.");
+      return;
+    }
     this.refreshSetupGenderPreviews(heritage);
     genderButtons.forEach((button) => {
       button.disabled = false;
       button.removeAttribute("aria-busy");
       button.removeAttribute("title");
     });
+    if (startButton) {
+      startButton.disabled = false;
+      startButton.removeAttribute("title");
+      startButton.textContent = `Start life as ${
+        this.appearance === "alternate" ? "New style" : "Classic"
+      } ${this.gender === "female" ? "Girl" : "Boy"} →`;
+    }
   }
 
   // --- biography mode -------------------------------------------------------
 
   /** Start replaying an authored (or recorded) life. */
-  private async startBiographyPlay(bio: Biography): Promise<void> {
+  private async startBiographyPlay(bio: Biography): Promise<boolean> {
     const sourceMode = this.mode;
-    await warmStorybookCharacterAtlases("western");
-    if (this.mode !== sourceMode) return;
+    const ready = await warmStorybookCharacterAtlases(bio.heritage);
+    if (!ready) {
+      this.hint("Character art could not load. Check your connection and retry.");
+      return false;
+    }
+    if (this.mode !== sourceMode) return false;
     this.biography = bio;
     this.gender = bio.gender;
-    this.heritage = "western";
+    this.heritage = bio.heritage;
+    this.appearance = bio.appearance;
+    this.lifeSeed = `biography-${bio.id}`;
     this.newGame(true); // keep the biography; loadStage(0) builds its moments
     this.playerName = bio.name; // the profile shows whose life this is
+    return true;
   }
 
   private showBioList(): void {
@@ -5630,9 +5943,12 @@ export class Game {
         b.disabled = true;
         b.setAttribute("aria-busy", "true");
         b.textContent = "Loading character…";
-        await warmStorybookCharacterAtlases("western");
-        if (this.mode !== "biolist" || !b.isConnected) return;
         await this.startBiographyPlay(bio);
+        if (this.mode === "biolist" && b.isConnected) {
+          b.disabled = false;
+          b.removeAttribute("aria-busy");
+          b.textContent = "▶ Play";
+        }
       };
     });
     ov.querySelectorAll<HTMLButtonElement>(".plj-bio-edit").forEach((b) => {
@@ -5654,6 +5970,16 @@ export class Game {
     if (name) b.name = name.value;
     const sub = ov.querySelector<HTMLInputElement>("#plj-bio-sub");
     if (sub) b.subtitle = sub.value;
+    const heritage = ov.querySelector<HTMLSelectElement>(
+      "#plj-bio-heritage"
+    );
+    if (heritage) b.heritage = this.normalizeHeritage(heritage.value);
+    const appearance = ov.querySelector<HTMLSelectElement>(
+      "#plj-bio-appearance"
+    );
+    if (appearance) {
+      b.appearance = this.normalizeAppearance(appearance.value);
+    }
     ov.querySelectorAll<HTMLInputElement>(".plj-bio-title").forEach((inp) => {
       const sid = inp.dataset.stage!;
       const v = inp.value.trim();
@@ -5670,6 +5996,12 @@ export class Game {
     this.mode = "bioauthor";
     const b = this.editBio!;
     const presetOpts = MOMENT_PRESETS.map((p) => `<option value="${p.key}">${p.emoji} ${p.label}</option>`).join("");
+    const heritageOpts = HERITAGE_OPTIONS.map(
+      (option) =>
+        `<option value="${option.id}"${
+          option.id === b.heritage ? " selected" : ""
+        }>${esc(option.label)}</option>`
+    ).join("");
     const chapters = STAGES.map((s) => {
       const ch = b.chapters[s.id] ?? { moments: [] };
       const moments = ch.moments.length
@@ -5700,6 +6032,19 @@ export class Game {
             <button class="plj-gender${b.gender === "male" ? " sel" : ""}" data-g="male">👦 Boy</button>
             <button class="plj-gender${b.gender === "female" ? " sel" : ""}" data-g="female">👧 Girl</button>
           </div>
+          <div class="plj-setup-grid">
+            <label class="plj-setup-field">
+              <span>Heritage</span>
+              <select id="plj-bio-heritage">${heritageOpts}</select>
+            </label>
+            <label class="plj-setup-field">
+              <span>Character look</span>
+              <select id="plj-bio-appearance">
+                <option value="classic"${b.appearance === "classic" ? " selected" : ""}>Classic</option>
+                <option value="alternate"${b.appearance === "alternate" ? " selected" : ""}>New style</option>
+              </select>
+            </label>
+          </div>
         </div>
         <p class="plj-sub">Add the moments that happened in each chapter — pick a feeling, write what happened. Then play it to walk through their life.</p>
         <div class="plj-bio-chapters">${chapters}</div>
@@ -5713,6 +6058,16 @@ export class Game {
     ov.querySelectorAll<HTMLButtonElement>(".plj-gender").forEach((btn) => {
       btn.onclick = () => { this.syncBioFields(); b.gender = btn.dataset.g === "female" ? "female" : "male"; this.showBioAuthor(); };
     });
+    ov.querySelector<HTMLSelectElement>("#plj-bio-heritage")!.onchange =
+      (event) => {
+        this.syncBioFields();
+        b.heritage = this.normalizeHeritage(
+          (event.currentTarget as HTMLSelectElement).value
+        );
+        this.showBioAuthor();
+      };
+    ov.querySelector<HTMLSelectElement>("#plj-bio-appearance")!.onchange =
+      () => this.syncBioFields();
     ov.querySelectorAll<HTMLButtonElement>(".plj-bio-addbtn").forEach((btn) => {
       btn.onclick = () => {
         this.syncBioFields();
@@ -5741,7 +6096,12 @@ export class Game {
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
       button.textContent = "Loading character…";
-      await this.startBiographyPlay(this.editBio!);
+      const started = await this.startBiographyPlay(this.editBio!);
+      if (!started && this.mode === "bioauthor" && button.isConnected) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        button.textContent = "▶ Save & play";
+      }
     };
   }
 
@@ -5813,7 +6173,16 @@ export class Game {
       if (!chapters[h.stageId]) chapters[h.stageId] = { moments: [] };
       chapters[h.stageId].moments.push(m);
     }
-    return { id: "bio_" + this.uid(), name: name.trim() || "My life", gender: this.gender, subtitle: subtitle.trim(), chapters, createdAt: Date.now() };
+    return {
+      id: "bio_" + this.uid(),
+      name: name.trim() || "My life",
+      gender: this.gender,
+      heritage: this.heritage,
+      appearance: this.appearance,
+      subtitle: subtitle.trim(),
+      chapters,
+      createdAt: Date.now(),
+    };
   }
 
   private showTransition(lines: string[]): void {

@@ -102,7 +102,7 @@ describe("v5 storybook sprite selection", () => {
     ).toBe("elder");
   });
 
-  it("warms all 32 neutral, motion, and seated sheets when no heritage is filtered", async () => {
+  it("warms all 40 classic and alternate sheets when no heritage is filtered", async () => {
     const originalImage = globalThis.Image;
     const requestedSources: string[] = [];
 
@@ -141,8 +141,8 @@ describe("v5 storybook sprite selection", () => {
       });
     }
 
-    expect(requestedSources).toHaveLength(32);
-    expect(new Set(requestedSources).size).toBe(32);
+    expect(requestedSources).toHaveLength(40);
+    expect(new Set(requestedSources).size).toBe(40);
   });
 
   it("selects a valid dedicated frame for every stage, gender, heritage, and facing", () => {
@@ -159,6 +159,28 @@ describe("v5 storybook sprite selection", () => {
             expect(frame.row).toBeLessThan(
               frame.atlasFamily === "base" ? 5 : 3
             );
+            expect(frame.column).toBeGreaterThanOrEqual(0);
+            expect(frame.column).toBeLessThan(4);
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps every alternate gender and heritage in its own unified atlas", () => {
+    for (const gender of genders) {
+      for (const heritage of heritages) {
+        for (let stage = 0; stage < 12; stage += 1) {
+          for (const facing of facings) {
+            const frame = storybookFrameForLook(
+              avatarLook(stage, gender, heritage, "alternate"),
+              facing
+            );
+            expect(frame.appearance).toBe("alternate");
+            expect(frame.atlasFamily).toBe("alternate");
+            expect(frame.atlasKey).toBe(`${heritage}-${gender}`);
+            expect(frame.row).toBeGreaterThanOrEqual(0);
+            expect(frame.row).toBeLessThan(8);
             expect(frame.column).toBeGreaterThanOrEqual(0);
             expect(frame.column).toBeLessThan(4);
           }
@@ -353,5 +375,61 @@ describe("v5 storybook sprite selection", () => {
       }
     }
     expect(visited.size).toBe(320);
+  });
+
+  it("has valid anchors for all 576 alternate neutral, motion, and seated cells", () => {
+    const motionPhase = Math.PI / (2 * 1.85);
+    const visited = new Set<string>();
+    for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
+      for (const gender of genders) {
+        for (const heritage of heritages) {
+          const look = avatarLook(
+            stage,
+            gender,
+            heritage,
+            "alternate"
+          );
+          for (const facing of facings) {
+            const neutral = storybookAnimationFrameForLook(
+              look,
+              { moving: true, facing, verticalBias: 0 },
+              0
+            );
+            const motion = storybookAnimationFrameForLook(
+              look,
+              { moving: true, facing, verticalBias: 0 },
+              motionPhase
+            );
+            expect(neutral.atlasFamily).toBe("alternate");
+            expect(neutral.column).toBeLessThan(4);
+            expect(motion.atlasFamily).toBe("alternate");
+            expect(motion.column).toBe(neutral.column + 4);
+            for (const frame of [neutral, motion]) {
+              visited.add(
+                `${frame.atlasKey}:${frame.row}:${frame.column}`
+              );
+              expect(storybookGroundAnchorForFrame(frame)).not.toBeNull();
+            }
+          }
+          const seated = storybookAnimationFrameForLook(
+            look,
+            {
+              moving: false,
+              facing: "back",
+              verticalBias: 0,
+              pose: "sit",
+            },
+            0
+          );
+          expect(seated.atlasFamily).toBe("alternate");
+          expect(seated.column).toBe(8);
+          visited.add(
+            `${seated.atlasKey}:${seated.row}:${seated.column}`
+          );
+          expect(storybookGroundAnchorForFrame(seated)).not.toBeNull();
+        }
+      }
+    }
+    expect(visited.size).toBe(576);
   });
 });
