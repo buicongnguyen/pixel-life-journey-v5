@@ -70,6 +70,32 @@ const alternateAnchorManifest = JSON.parse(
     "utf8"
   )
 );
+const motionAnchorManifest = JSON.parse(
+  readFileSync(
+    `${atlasDirectory}/character-motion-anchors.json`,
+    "utf8"
+  )
+);
+const alternateBuilder = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../scripts/build-character-appearance-alternate.py",
+      import.meta.url
+    )
+  ),
+  "utf8"
+);
+const alphaPreservationCells = {
+  "character-appearance-alternate-western-female.png": [
+    [2, 0, 14_500],
+  ],
+  "character-appearance-alternate-asian-female.png": [
+    [2, 0, 14_500],
+  ],
+  "character-appearance-alternate-black-female.png": [
+    [4, 0, 16_500],
+  ],
+};
 const pngSignature = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
@@ -290,6 +316,99 @@ function recomputeGroundAnchor(image, row, column) {
   ];
 }
 
+function upperBodyCentroidX(image, row, column) {
+  const bounds = visibleBoundsInCell(image, row, column);
+  if (!bounds) throw new Error(`empty cell ${row}:${column}`);
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  const bodyBottom = Math.min(
+    bounds.maxY,
+    bounds.minY +
+      Math.max(
+        1,
+        Math.round((bounds.maxY - bounds.minY) * 0.82)
+      )
+  );
+  let totalWeight = 0;
+  let weightedX = 0;
+  for (let y = bounds.minY; y < bodyBottom; y += 1) {
+    for (let x = bounds.minX; x < bounds.maxX; x += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) * 4 + 3
+        ];
+      if (alpha <= 64) continue;
+      totalWeight += alpha;
+      weightedX += (x + 0.5) * alpha;
+    }
+  }
+  if (!totalWeight) {
+    throw new Error(`no upper body in ${row}:${column}`);
+  }
+  return weightedX / totalWeight;
+}
+
+function recomputeMatchedMotionAnchor(
+  motion,
+  neutral,
+  row,
+  motionColumn,
+  neutralColumn
+) {
+  const motionGround = recomputeGroundAnchor(
+    motion,
+    row,
+    motionColumn
+  );
+  const neutralGround = recomputeGroundAnchor(
+    neutral,
+    row,
+    neutralColumn
+  );
+  const neutralBodyOffset =
+    upperBodyCentroidX(neutral, row, neutralColumn) -
+    neutralGround[0];
+  return [
+    Math.round(
+      (upperBodyCentroidX(motion, row, motionColumn) -
+        neutralBodyOffset) *
+        100
+    ) / 100,
+    motionGround[1],
+  ];
+}
+
+function alphaDifference(
+  image,
+  row,
+  firstColumn,
+  secondColumn,
+  mirrorSecond = false
+) {
+  let difference = 0;
+  for (let y = 0; y < CELL_SIZE; y += 1) {
+    for (let x = 0; x < CELL_SIZE; x += 1) {
+      const first =
+        ((row * CELL_SIZE + y) * image.width +
+          firstColumn * CELL_SIZE +
+          x) *
+          4 +
+        3;
+      const secondX = mirrorSecond ? CELL_SIZE - 1 - x : x;
+      const second =
+        ((row * CELL_SIZE + y) * image.width +
+          secondColumn * CELL_SIZE +
+          secondX) *
+          4 +
+        3;
+      difference += Math.abs(
+        image.rgba[first] - image.rgba[second]
+      );
+    }
+  }
+  return difference;
+}
+
 describe("v5 character atlas assets", () => {
   it("checks in exactly the eight expected runtime atlases", () => {
     const actualAtlases = readdirSync(atlasDirectory)
@@ -378,6 +497,14 @@ describe("v5 character atlas assets", () => {
         const neutral = decodeRgbaPng(
           `${atlasDirectory}/${neutralPrefix}${filename.slice(motionPrefix.length)}`
         );
+        const family = motionPrefix.includes("-base-")
+          ? "base"
+          : "expansion";
+        const atlasKey = filename
+          .slice(motionPrefix.length)
+          .replace(/\.png$/, "");
+        const recordedAnchors =
+          motionAnchorManifest.families[family].atlases[atlasKey];
         expect([image.width, image.height]).toEqual([
           MOTION_COLUMNS * CELL_SIZE,
           rows * CELL_SIZE,
@@ -418,6 +545,25 @@ describe("v5 character atlas assets", () => {
                 1.05
               );
             }
+            const recomputed =
+              column < COLUMNS
+                ? recomputeMatchedMotionAnchor(
+                    image,
+                    neutral,
+                    row,
+                    column,
+                    column
+                  )
+                : recomputeGroundAnchor(image, row, column);
+            const recorded = recordedAnchors[row][column];
+            expect(
+              Math.abs(recomputed[0] - recorded[0]),
+              `${filename} stable root x ${row}:${column}`
+            ).toBeLessThanOrEqual(0.75);
+            expect(
+              recomputed[1],
+              `${filename} ground y ${row}:${column}`
+            ).toBe(recorded[1]);
           }
         }
         for (let offset = 0; offset < image.rgba.length; offset += 4) {
@@ -506,11 +652,16 @@ describe("v5 character atlas assets", () => {
               1.05
             );
           }
-          const recomputed = recomputeGroundAnchor(
-            image,
-            row,
-            column
-          );
+          const recomputed =
+            column >= 4 && column <= 7
+              ? recomputeMatchedMotionAnchor(
+                  image,
+                  image,
+                  row,
+                  column,
+                  column - 4
+                )
+              : recomputeGroundAnchor(image, row, column);
           const recorded = recordedAnchors[row][column];
           expect(
             Math.abs(recomputed[0] - recorded[0]),
@@ -541,6 +692,44 @@ describe("v5 character atlas assets", () => {
         ALTERNATE_ROWS * ALTERNATE_COLUMNS
       );
       expect(opaqueChromaPixels).toBe(0);
+      for (const [
+        row,
+        column,
+        minimumVisiblePixels,
+      ] of alphaPreservationCells[filename] ?? []) {
+        expect(
+          visiblePixelsInCell(image, row, column),
+          `${filename} preserves garment alpha ${row}:${column}`
+        ).toBeGreaterThanOrEqual(minimumVisiblePixels);
+      }
+      for (let row = 0; row < ALTERNATE_ROWS; row += 1) {
+        const directDifference = alphaDifference(
+          image,
+          row,
+          5,
+          7
+        );
+        const mirroredDifference = alphaDifference(
+          image,
+          row,
+          5,
+          7,
+          true
+        );
+        expect(
+          mirroredDifference,
+          `${filename} motion side directions ${row}`
+        ).toBeLessThan(directDifference);
+      }
     });
   }
+
+  it("keeps neutral and motion source direction contracts separate", () => {
+    expect(alternateBuilder).toContain(
+      "NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL = (0, 3, 2, 1)"
+    );
+    expect(alternateBuilder).toContain(
+      "MOTION_SOURCE_COLUMNS_TO_CANONICAL = (0, 1, 2, 3)"
+    );
+  });
 });

@@ -46,21 +46,12 @@ def clear_enclosed_chroma(
 ) -> tuple[Image.Image, int]:
     """Clear key-colored islands that a border flood fill cannot reach.
 
-    Expansion prompts explicitly forbid the flat magenta key in clothing, so
-    applying the shared chroma predicate globally is safe for these sources and
-    prevents tiny pink holes from surviving inside bags, curls, or bent arms.
+    Enclosed cleanup must use the strict key-color matcher. The shared broad
+    predicate is reserved for border-connected flood fill; globally applying
+    its hue test can erase burgundy, purple, and green clothing.
     """
 
-    rgba = image.convert("RGBA")
-    pixels = rgba.load()
-    removed = 0
-    for y in range(rgba.height):
-        for x in range(rgba.width):
-            red, green, blue, alpha = pixels[x, y]
-            if alpha and BASE.is_chroma_candidate((red, green, blue), key):
-                pixels[x, y] = (0, 0, 0, 0)
-                removed += 1
-    return rgba, removed
+    return BASE.remove_isolated_chroma(image, key)
 
 
 def pack_sheet(source: Path, destination: Path, atlas_key: str) -> Image.Image:

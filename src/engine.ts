@@ -48,6 +48,15 @@ import { VEHICLES } from "./vehicles";
 import { COMMUTES, type CommuteTier } from "./commutes";
 import { EVENTS, type RandomEvent } from "./events";
 import {
+  friendAgeForStage,
+  isSameStagePeerKind,
+  peerHeritage,
+} from "./friends";
+import {
+  PERSON_REACTION_SECONDS,
+  interactionExpressionsAt,
+} from "./character-interactions";
+import {
   type Biography,
   type BioChapter,
   listBios,
@@ -65,6 +74,12 @@ import {
   warmStorybookSetupAtlases,
 } from "./storybook-characters";
 import { warmStorybookPetAtlases } from "./storybook-pets";
+import {
+  drawOccupationCharacter,
+  OCCUPATION_UNIFORMS,
+  occupationHeritage,
+  warmOccupationCharacterAtlases,
+} from "./occupation-characters";
 import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
@@ -1164,6 +1179,8 @@ interface Station {
   zone: StationZone;
   /** Stable storybook identity for a person station. */
   appearance?: CharacterAppearanceId;
+  /** Stable peer heritage; family members inherit the player's heritage. */
+  heritage?: HeritageStyle;
   /** For surprise world pickups/hazards spawned from events.ts. */
   event?: RandomEvent;
   /** For bad items: which good category satiates it (diet = food, fit = activity). */
@@ -1172,6 +1189,15 @@ interface Station {
   contactCd: number;
   /** For bad items: seconds you're "full" of it — it freezes and fades while >0. */
   satiated: number;
+}
+
+interface PersonReaction {
+  targetId: string;
+  person: PersonKind;
+  startedAt: number;
+  endsAt: number;
+  positive: boolean;
+  kind: "talk" | "gift";
 }
 
 interface InventorySlot {
@@ -1435,6 +1461,14 @@ export class Game {
   // a transient banner shown in the sky area after you interact with a person:
   // a nice descriptive line (text) + the point changes (sub)
   private skyMessage: { text: string; sub?: string; color: string; timer: number; wrapW?: number; wrapLines?: string[]; wrapCW?: number } | null = null;
+  // Render-only social feedback. It is intentionally absent from saves and
+  // snapshots so a conversation cue can never change gameplay.
+  private personReaction: PersonReaction | null = null;
+  private reducedMotion =
+    typeof window !== "undefined"
+      ? window.matchMedia?.("(prefers-reduced-motion: reduce)")
+          .matches ?? false
+      : false;
   // reused scratch draw-list — avoids allocating an array + N wrapper objects every frame
   private drawList: { y: number; station?: Station; pet?: boolean }[] = [];
   // HUD dirty-check — skip the per-frame DOM writes when nothing relevant changed
@@ -1543,6 +1577,26 @@ export class Game {
       px: Math.round(this.px),
       py: Math.round(this.py),
       focus: this.focusIndex >= 0 ? this.stations[this.focusIndex]?.opt.id : null,
+      interaction: this.personReaction
+        ? {
+            target: this.personReaction.targetId,
+            kind: this.personReaction.kind,
+            remaining: Math.max(
+              0,
+              Math.round(
+                (this.personReaction.endsAt - this.renderTime) * 100
+              ) / 100
+            ),
+            expressions: interactionExpressionsAt(
+              this.reducedMotion
+                ? 0
+                : this.renderTime -
+                    this.personReaction.startedAt,
+              this.personReaction.person,
+              this.personReaction.positive
+            ),
+          }
+        : null,
       partner: this.partner?.id ?? null,
       gender: this.gender,
       heritage: this.heritage,
@@ -1903,6 +1957,7 @@ export class Game {
     this.healthCount = 0;
     this.floats = [];
     this.skyMessage = null;
+    this.personReaction = null;
     this.story = null;
     this.renderInventory();
     this.sampleHealth();
@@ -1923,6 +1978,7 @@ export class Game {
     this.py = 500;
     this.placePetInRoom(this.px + 86, this.py + 48);
     this.focusIndex = -1;
+    this.personReaction = null;
     this.buildStations();
     this.renderFocusPanel(); // reset the panel to the default prompt on stage entry
     this.renderInventory();
@@ -2120,6 +2176,10 @@ export class Game {
         appearance:
           c.kind === "person"
             ? this.appearanceForNpc(opt)
+            : undefined,
+        heritage:
+          c.kind === "person"
+            ? this.heritageForNpc(opt)
             : undefined,
         guard: c.guard,
         contactCd: 0,
@@ -2692,9 +2752,55 @@ export class Game {
       };
       this.applyOption(opt);
       this.showOptionSky(opt, before);
+      if (this.mode === "playing") {
+        const wellbeingDelta =
+          this.stats.health -
+          before.health +
+          (this.stats.happiness - before.happiness);
+        const positive =
+          !this.isBadSocialOption(opt) && wellbeingDelta >= 0;
+        this.startPersonReaction(st, "talk", positive);
+      }
     } else {
       this.applyOption(opt);
     }
+  }
+
+  private startPersonReaction(
+    station: Station,
+    kind: PersonReaction["kind"],
+    positive: boolean
+  ): void {
+    if (!station.opt.person || this.mode !== "playing") return;
+    this.personReaction = {
+      targetId: station.opt.id,
+      person: station.opt.person,
+      startedAt: this.renderTime,
+      endsAt: this.renderTime + PERSON_REACTION_SECONDS,
+      positive,
+      kind,
+    };
+  }
+
+  private currentPersonReaction() {
+    const reaction = this.personReaction;
+    if (!reaction) return null;
+    const target = this.stations.find(
+      (station) =>
+        station.opt.id === reaction.targetId &&
+        station.opt.person === reaction.person
+    );
+    if (!target) return null;
+    return {
+      target,
+      expressions: interactionExpressionsAt(
+        this.reducedMotion
+          ? 0
+          : this.renderTime - reaction.startedAt,
+        reaction.person,
+        reaction.positive
+      ),
+    };
   }
 
   /**
@@ -3373,6 +3479,7 @@ export class Game {
     this.history = this.history.slice(0, snap.historyLen);
     this.floats = [];
     this.skyMessage = null;
+    this.personReaction = null;
     this.clearOverlay();
     this.loadStage(stageIndex, true); // restoring: don't re-sample/re-snapshot the entry
     if (this.petKind) {
@@ -3436,6 +3543,19 @@ export class Game {
     if (this.skyMessage) {
       this.skyMessage.timer -= dt;
       if (this.skyMessage.timer <= 0) this.skyMessage = null;
+    }
+    const personReaction = this.personReaction;
+    if (
+      personReaction &&
+      (this.mode !== "playing" ||
+        this.renderTime >= personReaction.endsAt ||
+        !this.stations.some(
+          (station) =>
+            station.opt.id === personReaction.targetId &&
+            station.opt.person === personReaction.person
+        ))
+    ) {
+      this.personReaction = null;
     }
 
     // floats animate in every mode
@@ -3792,6 +3912,7 @@ export class Game {
     this.passiveTick();
     this.sampleHealth();
     if (this.mode !== "playing") return;
+    this.startPersonReaction(person, "gift", true);
     this.renderFocusPanel();
     this.renderInventory();
   }
@@ -4099,6 +4220,7 @@ export class Game {
       // movement keeps its own walkPhase so approaching an NPC never speeds up
       // that person's idle breathing or focus pulse.
       const t = this.renderTime;
+      const activeReaction = this.currentPersonReaction();
       const doorActive = this.doorOpen();
       drawRoom(ctx, s.theme, W, H, FLOOR_Y, doorActive, t, {
         scene: s.scene,
@@ -4150,7 +4272,7 @@ export class Game {
             moving: this.moving,
             facing: this.facing,
             verticalBias: this.verticalBias,
-          });
+          }, activeReaction?.expressions.player);
           continue;
         }
         const st = d.station;
@@ -4176,10 +4298,14 @@ export class Game {
         if (st.kind === "event" && st.event) {
           drawEventItem(ctx, st.x, st.y, st.event.id, st.event.emoji, st.event.title, st.event.good !== false, focused, t);
         } else if (st.opt.person) {
-          drawPerson(ctx, st.x, st.y, st.opt.person, this.gender, st.opt.label, focused, used, t, this.stageIndex, this.heritage, {
+          drawPerson(ctx, st.x, st.y, st.opt.person, this.gender, st.opt.label, focused, used, t, this.stageIndex, st.heritage ?? this.heritage, {
             seated: this.shouldSitWithNewborn(st),
             appearance:
               st.appearance ?? this.appearanceForNpc(st.opt),
+            expression:
+              activeReaction?.target === st
+                ? activeReaction.expressions.npc
+                : "neutral",
           });
         } else {
           drawStation(ctx, st.x, st.y, st.opt.icon, st.opt.label, st.opt.category, focused, used, t);
@@ -5410,7 +5536,11 @@ export class Game {
 
   /** A face emoji for a friend that matches their gender + current age. */
   private friendFace(f: Friend): string {
-    const age = this.age + f.ageOffset;
+    const age = friendAgeForStage(
+      this.age,
+      this.stageIndex,
+      f.ageOffset
+    );
     if (age < 3) return "👶";
     if (f.gender === "female") return age < 18 ? "👧" : age < 62 ? "👩" : "👵";
     return age < 18 ? "👦" : age < 62 ? "👨" : "👴";
@@ -5425,7 +5555,11 @@ export class Game {
     this.mode = "friends";
     const list = this.friends.length
       ? this.friends.map((f) => {
-          const age = Math.max(0, Math.round(this.age + f.ageOffset));
+          const age = friendAgeForStage(
+            this.age,
+            this.stageIndex,
+            f.ageOffset
+          );
           const t = this.bondTier(f.bond);
           return `
         <div class="plj-friend-row">
@@ -5835,6 +5969,14 @@ export class Game {
     // PersonKind is the recurring identity contract and therefore stays stable.
     const identity = `${this.lifeSeed}:${opt.person ?? opt.id}`;
     return stableHash(identity) % 2 === 0 ? "classic" : "alternate";
+  }
+
+  /** School and campus peers can differ in heritage without changing age. */
+  private heritageForNpc(opt: LifeOption): HeritageStyle {
+    if (!opt.person || !isSameStagePeerKind(opt.person)) {
+      return this.heritage;
+    }
+    return peerHeritage(this.lifeSeed, opt.person);
   }
 
   /**
@@ -6271,7 +6413,7 @@ export class Game {
       const pay = o.salaryMul >= 1.4 ? "💰💰💰" : o.salaryMul >= 1.0 ? "💰💰" : "💰";
       return `
       <button class="plj-partner${locked ? " locked" : ""}" data-id="${o.id}" ${locked ? "disabled" : ""}>
-        <span class="plj-partner-face">${o.emoji}</span>
+        ${this.occupationCardFace(o)}
         <span class="plj-partner-name">${o.name}</span>
         <span class="plj-partner-title">Pay ${pay}</span>
         <span class="plj-partner-blurb">${o.blurb}</span>
@@ -6291,6 +6433,67 @@ export class Game {
         if (o) this.pickOccupation(o);
       };
     });
+    this.prepareOccupationCardFaces();
+  }
+
+  private occupationCardFace(o: Occupation): string {
+    if (!o.uniform || !occupationHeritage(this.heritage)) {
+      return `<span class="plj-partner-face">${o.emoji}</span>`;
+    }
+    return `<canvas class="plj-occupation-face" width="144" height="168" data-uniform="${o.uniform}" data-emoji="${o.emoji}" role="img" aria-label="${esc(o.name)} representative"></canvas>`;
+  }
+
+  private renderOccupationCardFaces(): void {
+    this.ui.overlay
+      .querySelectorAll<HTMLCanvasElement>(".plj-occupation-face")
+      .forEach((canvas) => {
+        const uniform = canvas.dataset.uniform;
+        if (
+          !OCCUPATION_UNIFORMS.includes(
+            uniform as (typeof OCCUPATION_UNIFORMS)[number]
+          )
+        ) {
+          return;
+        }
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        const drawn = drawOccupationCharacter(
+          context,
+          canvas.width / 2,
+          canvas.height - 5,
+          uniform as (typeof OCCUPATION_UNIFORMS)[number],
+          this.heritage,
+          this.gender,
+          { facing: "front", size: 160, shadow: false }
+        );
+        if (drawn) return;
+        context.fillStyle = "#fff8df";
+        context.font = "52px system-ui, sans-serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(
+          canvas.dataset.emoji ?? "💼",
+          canvas.width / 2,
+          canvas.height / 2
+        );
+      });
+  }
+
+  private prepareOccupationCardFaces(): void {
+    this.renderOccupationCardFaces();
+    if (!occupationHeritage(this.heritage)) return;
+    void warmOccupationCharacterAtlases(
+      this.heritage,
+      this.gender
+    ).then(() => {
+      if (
+        this.mode === "occupation" ||
+        this.mode === "careermove"
+      ) {
+        this.renderOccupationCardFaces();
+      }
+    });
   }
 
   /** The 💼 Career desk: change jobs or climb the ladder (IQ-gated). */
@@ -6305,7 +6508,7 @@ export class Game {
       const tagColor = isCur ? "#9fe0b8" : locked ? "#ff8a8a" : better ? "#ffd23f" : "#7fc9ff";
       return `
       <button class="plj-partner${isCur || locked ? " locked" : ""}" data-id="${o.id}" ${isCur || locked ? "disabled" : ""}>
-        <span class="plj-partner-face">${o.emoji}</span>
+        ${this.occupationCardFace(o)}
         <span class="plj-partner-name">${o.name}</span>
         <span class="plj-partner-title">${TIER_LABELS[o.tier]} · ${o.field}</span>
         <span class="plj-partner-blurb">${o.blurb}</span>
@@ -6330,6 +6533,7 @@ export class Game {
       this.mode = "playing";
       this.clearOverlay();
     };
+    this.prepareOccupationCardFaces();
   }
 
   private changeJob(o: Occupation): void {

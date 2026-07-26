@@ -9,7 +9,13 @@ import {
   warmStorybookCharacterAtlases,
 } from "./storybook-characters";
 import type { CuteFacing } from "./cute-characters";
-import type { Gender, HeritageStyle } from "./types";
+import type {
+  Gender,
+  HeritageStyle,
+  PersonKind,
+} from "./types";
+import { isSameStagePeerKind } from "./friends";
+import { STAGES } from "./stages";
 
 const genders: Gender[] = ["male", "female"];
 const heritages: HeritageStyle[] = [
@@ -100,6 +106,41 @@ describe("v5 storybook sprite selection", () => {
     expect(
       storybookAgeBand(personLook("father", "female", 9, "black"))
     ).toBe("elder");
+  });
+
+  it("keeps every school and campus peer in the player's life stage", () => {
+    for (let stageIndex = 1; stageIndex <= 6; stageIndex += 1) {
+      const peerKinds = STAGES[stageIndex].options
+        .map((option) => option.person)
+        .filter(
+          (kind): kind is PersonKind =>
+            !!kind && isSameStagePeerKind(kind)
+        );
+      for (const kind of peerKinds) {
+        for (const gender of genders) {
+          for (const heritage of heritages) {
+            const peer = personLook(
+              kind,
+              gender,
+              stageIndex,
+              heritage
+            );
+            const player = avatarLook(
+              stageIndex,
+              gender,
+              heritage
+            );
+            expect(peer.lifeStageIndex).toBe(stageIndex);
+            expect(storybookAgeBand(peer)).toBe(
+              storybookAgeBand(player)
+            );
+            expect(
+              storybookFrameForLook(peer, "front").atlasKey
+            ).toBe(`${heritage}-${peer.gender}`);
+          }
+        }
+      }
+    }
   });
 
   it("warms all 40 classic and alternate sheets when no heritage is filtered", async () => {

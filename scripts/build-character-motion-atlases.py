@@ -64,18 +64,9 @@ BASE = load_base_builder()
 def clear_all_chroma(
     image: Image.Image, key: tuple[int, int, int]
 ) -> tuple[Image.Image, int]:
-    """Clear key-colored islands as well as the border-connected backdrop."""
+    """Clear exact-key islands without treating garment hues as background."""
 
-    rgba = image.convert("RGBA")
-    pixels = rgba.load()
-    removed = 0
-    for y in range(rgba.height):
-        for x in range(rgba.width):
-            red, green, blue, alpha = pixels[x, y]
-            if alpha and BASE.is_chroma_candidate((red, green, blue), key):
-                pixels[x, y] = (0, 0, 0, 0)
-                removed += 1
-    return rgba, removed
+    return BASE.remove_isolated_chroma(image, key)
 
 
 def clear_detached_cast_shadows(image: Image.Image) -> tuple[Image.Image, int]:
@@ -342,6 +333,11 @@ def pack_sheet(
             )
             resize_fringe_removed += removed
             packed_anchor = paste_sprite(atlas, resized, row, column)
+            if column < 4:
+                packed_anchor = BASE.motion_anchor_matched_to_neutral(
+                    neutral_cell(atlas, row, column),
+                    neutral_cell(neutral, row, column),
+                )
             row_anchors.append(packed_anchor)
             details.append(
                 f"r{row}c{column}={sprite.size}->{resized.size}"
@@ -400,7 +396,14 @@ def validate_atlas(
                 raise ValueError(
                     f"{path} r{row}c{column} has only {opaque} opaque pixels"
                 )
-            actual = BASE.ground_anchor(cell)
+            actual = (
+                BASE.motion_anchor_matched_to_neutral(
+                    cell,
+                    neutral_cell(neutral, row, column),
+                )
+                if column < 4
+                else BASE.ground_anchor(cell)
+            )
             recorded = anchors[row][column]
             if (
                 abs(float(actual[0]) - float(recorded[0])) > 0.01

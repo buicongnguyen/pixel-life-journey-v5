@@ -698,6 +698,17 @@ body {
 .plj-partner-face {
   font-size: 34px;
 }
+.plj-occupation-face {
+  display: block;
+  width: 82px;
+  height: 96px;
+  margin: -4px auto 1px;
+  object-fit: contain;
+}
+.plj-partner.locked .plj-occupation-face {
+  filter: saturate(0.55);
+  opacity: 0.62;
+}
 .plj-partner-name {
   font-weight: 700;
   font-size: 15px;

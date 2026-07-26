@@ -20,6 +20,14 @@ export type Stats = Record<StatKey, number>;
  */
 export type CharacterAppearanceId = "classic" | "alternate";
 
+/** Reviewed adult occupation costume with separate heritage and gender art. */
+export type JobUniform =
+  | "doctor"
+  | "trainer"
+  | "dancer"
+  | "soldier"
+  | "farmer";
+
 /** Loose grouping used for icon tinting and balance reasoning. */
 export type OptionCategory =
   | "health"
@@ -253,6 +261,8 @@ export interface Occupation {
   minIq: number;
   /** Small one-off boost applied when you take the job. */
   perks?: Partial<Stats>;
+  /** Optional generated career representative shown in occupation UI. */
+  uniform?: JobUniform;
   storyTag: string;
 }
 

@@ -33,6 +33,7 @@ GROUND_ALPHA_THRESHOLD = 64
 GROUND_BAND_FRACTION = 0.125
 GROUND_BAND_MIN_PIXELS = 8
 GROUND_EDGE_TRIM_FRACTION = 0.12
+CHROMA_FRINGE_LAYERS = 2
 
 # Source turnarounds sometimes use the illustration convention "show the
 # subject's left side" (so the figure looks screen-right), even when the prompt
@@ -198,7 +199,7 @@ def channel_distance(rgb: tuple[int, int, int], key: tuple[int, int, int]) -> in
 def is_chroma_candidate(
     rgb: tuple[int, int, int], key: tuple[int, int, int]
 ) -> bool:
-    """Use a broad chroma test; flood connectivity supplies the safety."""
+    """Recognize key-colored fringe for a bounded local expansion."""
 
     red, green, blue = rgb
     key_red, key_green, key_blue = key
@@ -221,27 +222,120 @@ def is_chroma_candidate(
     return False
 
 
+def is_isolated_chroma_candidate(
+    rgb: tuple[int, int, int], key: tuple[int, int, int]
+) -> bool:
+    """Match only the actual key-color core.
+
+    The broad predicate above can mistake burgundy, purple, or green clothes
+    for the screen color. It is therefore allowed only in the two-pixel fringe
+    around an already-proven key-color core.
+    """
+
+    return channel_distance(rgb, key) <= 64
+
+
+def pixel_neighbors(index: int, width: int, height: int) -> tuple[int, ...]:
+    x = index % width
+    y = index // width
+    return tuple(
+        neighbor
+        for neighbor in (
+            index - 1 if x else -1,
+            index + 1 if x < width - 1 else -1,
+            index - width if y else -1,
+            index + width if y < height - 1 else -1,
+            index - width - 1 if x and y else -1,
+            index - width + 1 if x < width - 1 and y else -1,
+            index + width - 1 if x and y < height - 1 else -1,
+            index + width + 1 if x < width - 1 and y < height - 1 else -1,
+        )
+        if neighbor >= 0
+    )
+
+
+def expand_chroma_fringe(
+    selected: bytearray,
+    broad_candidates: bytearray,
+    width: int,
+    height: int,
+) -> None:
+    """Grow a proven key-color region through at most two antialias pixels."""
+
+    frontier = [index for index, value in enumerate(selected) if value]
+    for _ in range(CHROMA_FRINGE_LAYERS):
+        next_frontier: list[int] = []
+        for index in frontier:
+            for neighbor in pixel_neighbors(index, width, height):
+                if (
+                    broad_candidates[neighbor]
+                    and not selected[neighbor]
+                ):
+                    selected[neighbor] = 1
+                    next_frontier.append(neighbor)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+
+def remove_isolated_chroma(
+    image: Image.Image, key: tuple[int, int, int]
+) -> tuple[Image.Image, int]:
+    """Clear isolated exact-key pockets plus only their local edge fringe."""
+
+    rgba = image.convert("RGBA")
+    width, height = rgba.size
+    pixels = rgba.load()
+    selected = bytearray(width * height)
+    broad_candidates = bytearray(width * height)
+    for y in range(height):
+        offset = y * width
+        for x in range(width):
+            red, green, blue, alpha = pixels[x, y]
+            if not alpha:
+                continue
+            rgb = (red, green, blue)
+            if is_isolated_chroma_candidate(rgb, key):
+                selected[offset + x] = 1
+            if is_chroma_candidate(rgb, key):
+                broad_candidates[offset + x] = 1
+    expand_chroma_fringe(
+        selected, broad_candidates, width, height
+    )
+    removed = 0
+    for index, should_remove in enumerate(selected):
+        if not should_remove:
+            continue
+        pixels[index % width, index // width] = (0, 0, 0, 0)
+        removed += 1
+    return rgba, removed
+
+
 def remove_connected_chroma(image: Image.Image) -> tuple[Image.Image, tuple[int, int, int], int]:
-    """Make only border-connected chroma pixels transparent."""
+    """Clear border-connected exact key plus a bounded antialias fringe."""
 
     rgba = image.convert("RGBA")
     width, height = rgba.size
     pixels = rgba.load()
     key = border_key(rgba)
-    candidates = bytearray(width * height)
+    core_candidates = bytearray(width * height)
+    broad_candidates = bytearray(width * height)
 
     for y in range(height):
         offset = y * width
         for x in range(width):
-            if is_chroma_candidate(pixels[x, y][:3], key):
-                candidates[offset + x] = 1
+            rgb = pixels[x, y][:3]
+            if is_isolated_chroma_candidate(rgb, key):
+                core_candidates[offset + x] = 1
+            if is_chroma_candidate(rgb, key):
+                broad_candidates[offset + x] = 1
 
     background = bytearray(width * height)
     queue: deque[int] = deque()
 
     def seed(x: int, y: int) -> None:
         index = y * width + x
-        if candidates[index] and not background[index]:
+        if core_candidates[index] and not background[index]:
             background[index] = 1
             queue.append(index)
 
@@ -254,23 +348,14 @@ def remove_connected_chroma(image: Image.Image) -> tuple[Image.Image, tuple[int,
 
     while queue:
         index = queue.popleft()
-        x = index % width
-        y = index // width
-        neighbors = (
-            index - 1 if x else -1,
-            index + 1 if x < width - 1 else -1,
-            index - width if y else -1,
-            index + width if y < height - 1 else -1,
-            index - width - 1 if x and y else -1,
-            index - width + 1 if x < width - 1 and y else -1,
-            index + width - 1 if x and y < height - 1 else -1,
-            index + width + 1 if x < width - 1 and y < height - 1 else -1,
-        )
-        for neighbor in neighbors:
-            if neighbor >= 0 and candidates[neighbor] and not background[neighbor]:
+        for neighbor in pixel_neighbors(index, width, height):
+            if core_candidates[neighbor] and not background[neighbor]:
                 background[neighbor] = 1
                 queue.append(neighbor)
 
+    expand_chroma_fringe(
+        background, broad_candidates, width, height
+    )
     removed = 0
     for index, is_background in enumerate(background):
         if not is_background:
@@ -402,6 +487,46 @@ def ground_anchor(cell: Image.Image) -> list[float | int]:
     # therefore preserves the packer's five transparent inset pixels while
     # mapping the actual feet to footY at runtime.
     return [round(weighted_x / retained_weight, 2), bbox[3]]
+
+
+def upper_body_centroid_x(cell: Image.Image) -> float:
+    """Return an alpha-weighted torso/head X center, excluding the stride."""
+
+    alpha = cell.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox is None:
+        raise ValueError("Cannot derive a body center from an empty cell")
+    body_bottom = min(
+        bbox[3],
+        bbox[1] + max(1, round((bbox[3] - bbox[1]) * 0.82)),
+    )
+    pixels = alpha.load()
+    total_weight = 0
+    weighted_x = 0.0
+    for y in range(bbox[1], body_bottom):
+        for x in range(bbox[0], bbox[2]):
+            weight = pixels[x, y]
+            if weight <= GROUND_ALPHA_THRESHOLD:
+                continue
+            total_weight += weight
+            weighted_x += (x + 0.5) * weight
+    if not total_weight:
+        raise ValueError(f"No upper-body pixels found in visible bounds {bbox}")
+    return weighted_x / total_weight
+
+
+def motion_anchor_matched_to_neutral(
+    motion_cell: Image.Image, neutral_cell: Image.Image
+) -> list[float | int]:
+    """Keep a motion pose's torso on the neutral pose's world-space root."""
+
+    motion_ground = ground_anchor(motion_cell)
+    neutral_ground = ground_anchor(neutral_cell)
+    neutral_body_offset = (
+        upper_body_centroid_x(neutral_cell) - float(neutral_ground[0])
+    )
+    matched_x = upper_body_centroid_x(motion_cell) - neutral_body_offset
+    return [round(matched_x, 2), motion_ground[1]]
 
 
 def atlas_ground_anchors(atlas: Image.Image, atlas_key: str) -> list[list[list[float | int]]]:

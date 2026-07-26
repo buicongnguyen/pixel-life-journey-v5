@@ -52,11 +52,27 @@ SOURCE_FAMILIES = {
     "expansion-motion": 3,
 }
 
-# ImageGen turnaround sheets use the illustration convention "show the
-# character's left side" in column two, which makes the character face
-# screen-right. Runtime direction is literal screen direction, so the side
-# columns are swapped for every sheet.
-SOURCE_COLUMNS_TO_CANONICAL = (0, 3, 2, 1)
+# Neutral turnaround sheets use the illustration convention "show the
+# character's left side" in column two, so their side columns need swapping.
+# The reviewed walking sheets already use literal screen direction and must
+# retain their source order.
+NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL = (0, 3, 2, 1)
+MOTION_SOURCE_COLUMNS_TO_CANONICAL = (0, 1, 2, 3)
+
+# A small set of generated rows supplied the same screen-right profile twice.
+# Mirror the reviewed right cell into the missing left cell after unification.
+MIRROR_RIGHT_TO_LEFT_NEUTRAL_ROWS: dict[str, tuple[int, ...]] = {
+    "western-male": (0, 7),
+    "western-female": (7,),
+    "asian-male": (0, 2, 7),
+    "asian-female": (7,),
+    "middleEastern-male": (0, 7),
+    "middleEastern-female": (7,),
+    "black-male": (7,),
+}
+MIRROR_RIGHT_TO_LEFT_MOTION_ROWS: dict[str, tuple[int, ...]] = {
+    "asian-female": (7,),
+}
 
 # unified row -> (source family, source row)
 UNIFIED_ROW_SOURCES = (
@@ -203,8 +219,9 @@ def canonicalize_directions(
     destination: Path,
     rows: int,
     columns: int,
+    source_columns: tuple[int, int, int, int],
 ) -> None:
-    """Swap illustration-view side columns into literal screen directions."""
+    """Normalize one reviewed sheet into literal screen directions."""
 
     with Image.open(source) as image_file:
         image = image_file.convert("RGBA")
@@ -214,7 +231,7 @@ def canonicalize_directions(
     canonical = Image.new("RGBA", expected, (0, 0, 0, 0))
     for row in range(rows):
         for target_column, source_column in enumerate(
-            SOURCE_COLUMNS_TO_CANONICAL
+            source_columns
         ):
             canonical.alpha_composite(
                 cell(image, row, source_column),
@@ -279,6 +296,36 @@ def combine_atlases(
     return unified
 
 
+def repair_duplicate_side_views(
+    atlas: Image.Image, atlas_key: str
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Mirror reviewed right profiles into missing left-facing cells."""
+
+    neutral_rows = MIRROR_RIGHT_TO_LEFT_NEUTRAL_ROWS.get(
+        atlas_key, ()
+    )
+    motion_rows = MIRROR_RIGHT_TO_LEFT_MOTION_ROWS.get(
+        atlas_key, ()
+    )
+    for rows, left_column, right_column in (
+        (neutral_rows, 1, 3),
+        (motion_rows, 5, 7),
+    ):
+        for row in rows:
+            right = cell(atlas, row, right_column)
+            left = right.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            atlas.paste(
+                left,
+                (
+                    left_column * CELL_SIZE,
+                    row * CELL_SIZE,
+                    (left_column + 1) * CELL_SIZE,
+                    (row + 1) * CELL_SIZE,
+                ),
+            )
+    return neutral_rows, motion_rows
+
+
 def visible_height(sprite: Image.Image) -> int:
     bbox = sprite.getchannel("A").getbbox()
     if bbox is None:
@@ -305,7 +352,14 @@ def atlas_anchors(
 ) -> list[list[list[float | int]]]:
     return [
         [
-            BASE.ground_anchor(cell(atlas, row, column))
+            (
+                BASE.motion_anchor_matched_to_neutral(
+                    cell(atlas, row, column),
+                    cell(atlas, row, column - 4),
+                )
+                if 4 <= column <= 7
+                else BASE.ground_anchor(cell(atlas, row, column))
+            )
             for column in range(UNIFIED_COLUMNS)
         ]
         for row in range(len(UNIFIED_ROWS))
@@ -355,7 +409,14 @@ def validate_unified(
                     f"{path} r{row}c{column} retains {magenta} "
                     "opaque chroma-key pixels"
                 )
-            actual = BASE.ground_anchor(sprite)
+            actual = (
+                BASE.motion_anchor_matched_to_neutral(
+                    sprite,
+                    cell(image, row, column - 4),
+                )
+                if 4 <= column <= 7
+                else BASE.ground_anchor(sprite)
+            )
             recorded = anchors[row][column]
             if (
                 abs(float(actual[0]) - float(recorded[0])) > 0.01
@@ -444,56 +505,67 @@ def main() -> None:
                 raw_expansion_neutral,
                 3,
             )
-            base_motion_anchors = MOTION.pack_sheet(
-                sources["base-motion"],
-                raw_base_motion,
-                raw_base_neutral,
-                5,
-            )
-            MOTION.validate_atlas(
-                raw_base_motion,
-                5,
-                base_motion_anchors,
-                raw_base_neutral,
-            )
-            expansion_motion_anchors = MOTION.pack_sheet(
-                sources["expansion-motion"],
-                raw_expansion_motion,
-                raw_expansion_neutral,
-                3,
-            )
-            MOTION.validate_atlas(
-                raw_expansion_motion,
-                3,
-                expansion_motion_anchors,
-                raw_expansion_neutral,
-            )
-
             base_neutral = temporary_dir / f"{key}-base-neutral.png"
             expansion_neutral = (
                 temporary_dir / f"{key}-expansion-neutral.png"
             )
-            base_motion = temporary_dir / f"{key}-base-motion.png"
-            expansion_motion = (
-                temporary_dir / f"{key}-expansion-motion.png"
-            )
             canonicalize_directions(
-                raw_base_neutral, base_neutral, 5, NEUTRAL_COLUMNS
+                raw_base_neutral,
+                base_neutral,
+                5,
+                NEUTRAL_COLUMNS,
+                NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL,
             )
             canonicalize_directions(
                 raw_expansion_neutral,
                 expansion_neutral,
                 3,
                 NEUTRAL_COLUMNS,
+                NEUTRAL_SOURCE_COLUMNS_TO_CANONICAL,
+            )
+
+            base_motion_anchors = MOTION.pack_sheet(
+                sources["base-motion"],
+                raw_base_motion,
+                base_neutral,
+                5,
+            )
+            MOTION.validate_atlas(
+                raw_base_motion,
+                5,
+                base_motion_anchors,
+                base_neutral,
+            )
+            expansion_motion_anchors = MOTION.pack_sheet(
+                sources["expansion-motion"],
+                raw_expansion_motion,
+                expansion_neutral,
+                3,
+            )
+            MOTION.validate_atlas(
+                raw_expansion_motion,
+                3,
+                expansion_motion_anchors,
+                expansion_neutral,
+            )
+
+            base_motion = temporary_dir / f"{key}-base-motion.png"
+            expansion_motion = (
+                temporary_dir / f"{key}-expansion-motion.png"
             )
             canonicalize_directions(
-                raw_base_motion, base_motion, 5, MOTION_COLUMNS
+                raw_base_motion,
+                base_motion,
+                5,
+                MOTION_COLUMNS,
+                MOTION_SOURCE_COLUMNS_TO_CANONICAL,
             )
             canonicalize_directions(
                 raw_expansion_motion,
                 expansion_motion,
                 3,
                 MOTION_COLUMNS,
+                MOTION_SOURCE_COLUMNS_TO_CANONICAL,
             )
 
             output_name = f"character-appearance-alternate-{key}.png"
@@ -505,13 +577,21 @@ def main() -> None:
                 expansion_motion,
                 staged_path,
             )
+            neutral_repairs, motion_repairs = repair_duplicate_side_views(
+                unified, key
+            )
+            unified.save(staged_path, format="PNG", optimize=True)
             anchors = atlas_anchors(unified)
             validate_unified(staged_path, anchors)
             atlases[key] = anchors
             staged_outputs.append(
                 (staged_path, args.out_dir / output_name)
             )
-            print(f"validated {staged_path} ({len(anchors) * 9} cells)")
+            print(
+                f"validated {staged_path} ({len(anchors) * 9} cells), "
+                f"mirroredNeutralRows={neutral_repairs}, "
+                f"mirroredMotionRows={motion_repairs}"
+            )
 
         manifest = {
             "version": 1,

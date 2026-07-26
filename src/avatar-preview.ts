@@ -1,16 +1,33 @@
-import { avatarLook, drawCharacter, personLook } from "./sprites";
+import {
+  avatarLook,
+  drawCharacter,
+  drawPerson,
+  personLook,
+} from "./sprites";
 import type { AvatarFacing } from "./sprites";
 import {
   drawStorybookPet,
   warmStorybookPetAtlases,
   type PetFacing,
 } from "./storybook-pets";
+import {
+  drawOccupationCharacter,
+  OCCUPATION_HERITAGES,
+  OCCUPATION_UNIFORMS,
+  warmOccupationCharacterAtlases,
+  type OccupationFacing,
+} from "./occupation-characters";
 import type {
   CharacterAppearanceId,
   Gender,
   HeritageStyle,
+  JobUniform,
   PersonKind,
 } from "./types";
+import {
+  PERSON_REACTION_SECONDS,
+  interactionExpressionsAt,
+} from "./character-interactions";
 
 const maybeCanvas = document.getElementById("preview");
 if (!(maybeCanvas instanceof HTMLCanvasElement)) {
@@ -498,6 +515,289 @@ function renderPets(now: number): void {
   });
 }
 
+const occupationLabels: Record<JobUniform, string> = {
+  doctor: "Doctor · middle age",
+  trainer: "Fitness trainer · adult",
+  dancer: "Professional dancer · adult",
+  soldier: "Army soldier · adult",
+  farmer: "Farmer · middle age",
+};
+
+const occupationIdentities: {
+  heritage: (typeof OCCUPATION_HERITAGES)[number];
+  gender: Gender;
+  label: string;
+}[] = [
+  { heritage: "western", gender: "male", label: "Western male" },
+  { heritage: "western", gender: "female", label: "Western female" },
+  { heritage: "asian", gender: "male", label: "Asian male" },
+  { heritage: "asian", gender: "female", label: "Asian female" },
+];
+
+function requestedOccupation(): JobUniform | null {
+  const requested = searchParams.get("job");
+  return OCCUPATION_UNIFORMS.includes(
+    requested as (typeof OCCUPATION_UNIFORMS)[number]
+  )
+    ? (requested as JobUniform)
+    : null;
+}
+
+function drawOccupationPreviewHeader(detail?: JobUniform): void {
+  ctx.fillStyle = "#7fd8ff";
+  ctx.fillRect(0, 0, width, 92);
+  ctx.fillStyle = "#172738";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 29px Arial";
+  ctx.fillText(
+    detail
+      ? `Occupation motion review · ${occupationLabels[detail]}`
+      : "Occupation cast · Asian and Western adults",
+    36,
+    34
+  );
+  ctx.font = "16px Arial";
+  ctx.fillText(
+    detail
+      ? "Four neutral directions + four real walking poses · male and female remain separate"
+      : "Doctor, trainer, dancer, army, and farmer · front neutral + walking sample",
+    36,
+    68
+  );
+}
+
+function renderOccupationOverview(now: number): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawOccupationPreviewHeader();
+  const rowTop = 260;
+  const rowGap = 175;
+
+  occupationIdentities.forEach((identity, identityIndex) => {
+    const groupX = 300 + identityIndex * 350;
+    label(identity.label, groupX + 12, 112);
+  });
+
+  OCCUPATION_UNIFORMS.forEach((uniform, row) => {
+    const footY = rowTop + row * rowGap;
+    label(occupationLabels[uniform], 30, footY - 76, "left");
+    occupationIdentities.forEach((identity, identityIndex) => {
+      const groupX = 300 + identityIndex * 350;
+      drawOccupationCharacter(
+        ctx,
+        groupX - 48,
+        footY,
+        uniform,
+        identity.heritage,
+        identity.gender,
+        { facing: "front", size: 132 }
+      );
+      drawOccupationCharacter(
+        ctx,
+        groupX + 72,
+        footY,
+        uniform,
+        identity.heritage,
+        identity.gender,
+        {
+          facing: "right",
+          moving: true,
+          phase: now / 170,
+          size: 132,
+        }
+      );
+    });
+  });
+}
+
+function renderOccupationDetail(
+  _now: number,
+  uniform: JobUniform
+): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawOccupationPreviewHeader(uniform);
+  const facings: OccupationFacing[] = [
+    "front",
+    "left",
+    "back",
+    "right",
+  ];
+  const columnX = [
+    125, 315, 505, 695, 895, 1085, 1275, 1465,
+  ];
+  const topLabels = [
+    "front neutral",
+    "left neutral",
+    "back neutral",
+    "right neutral",
+    "front step",
+    "left step",
+    "back step",
+    "right step",
+  ];
+  topLabels.forEach((text, column) => {
+    label(text, columnX[column], 118);
+  });
+
+  occupationIdentities.forEach((identity, row) => {
+    const footY = 300 + row * 210;
+    lane(footY, identity.label);
+    facings.forEach((facing, column) => {
+      drawOccupationCharacter(
+        ctx,
+        columnX[column],
+        footY,
+        uniform,
+        identity.heritage,
+        identity.gender,
+        { facing, size: 148 }
+      );
+      drawOccupationCharacter(
+        ctx,
+        columnX[column + 4],
+        footY,
+        uniform,
+        identity.heritage,
+        identity.gender,
+        {
+          facing,
+          moving: true,
+          phase: 1,
+          size: 148,
+        }
+      );
+    });
+  });
+}
+
+function renderOccupations(now: number): void {
+  const detail = requestedOccupation();
+  if (detail) renderOccupationDetail(now, detail);
+  else renderOccupationOverview(now);
+}
+
+function renderInteractions(now: number): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#7fd8ff";
+  ctx.fillRect(0, 0, width, 86);
+  ctx.fillStyle = "#172738";
+  ctx.font = "bold 29px Arial";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    "Interaction review: friendly reactions and distinct risky roles",
+    36,
+    34
+  );
+  ctx.font = "16px Arial";
+  ctx.fillText(
+    "Face-adjacent smile/talk cues are cosmetic · role styling never changes heritage or age",
+    36,
+    66
+  );
+
+  const heritages: { id: HeritageStyle; label: string }[] = [
+    { id: "western", label: "Western" },
+    { id: "asian", label: "Asian" },
+    { id: "middleEastern", label: "Middle Eastern" },
+    { id: "black", label: "Black / African diaspora" },
+  ];
+  const cases: {
+    kind: PersonKind;
+    title: string;
+    stage: number;
+  }[] = [
+    {
+      kind: "bestFriend",
+      title: "Friendly conversation",
+      stage: 5,
+    },
+    {
+      kind: "smokerFriend",
+      title: "Risky pressure",
+      stage: 5,
+    },
+    {
+      kind: "gangster",
+      title: "Hostile crowd",
+      stage: 5,
+    },
+    {
+      kind: "playboy",
+      title: "Flashy charmer",
+      stage: 6,
+    },
+  ];
+  const columnX = [215, 600, 985, 1370];
+  const rawPhase = searchParams.get("phase");
+  const requestedPhase =
+    rawPhase === null ? Number.NaN : Number(rawPhase);
+  const elapsed = Number.isFinite(requestedPhase)
+    ? Math.max(
+        0,
+        Math.min(PERSON_REACTION_SECONDS, requestedPhase)
+      )
+    : (now / 1000) % PERSON_REACTION_SECONDS;
+
+  cases.forEach((entry, column) => {
+    label(entry.title, columnX[column], 116);
+  });
+  heritages.forEach((heritage, row) => {
+    const footY = 275 + row * 220;
+    lane(footY, heritage.label);
+    cases.forEach((entry, column) => {
+      const expressions = interactionExpressionsAt(
+        elapsed,
+        entry.kind
+      );
+      drawCharacter(
+        ctx,
+        columnX[column] - 52,
+        footY,
+        avatarLook(
+          entry.stage,
+          "female",
+          heritage.id,
+          requestedAppearance
+        ),
+        now / 1000,
+        {
+          moving: false,
+          facing: "front",
+          verticalBias: 0,
+        },
+        expressions.player
+      );
+      drawPerson(
+        ctx,
+        columnX[column] + 52,
+        footY,
+        entry.kind,
+        "male",
+        entry.kind === "bestFriend"
+          ? "Best friend"
+          : entry.kind === "smokerFriend"
+            ? "Smoker friend"
+            : entry.kind === "gangster"
+              ? "Gangster"
+              : "Playboy",
+        false,
+        false,
+        now / 1000,
+        entry.stage,
+        heritage.id,
+        {
+          appearance: requestedAppearance,
+          expression: expressions.npc,
+        }
+      );
+    });
+  });
+}
+
 function render(): void {
   if (location.search.includes("variants")) {
     renderVariants();
@@ -532,10 +832,23 @@ function render(): void {
   drawMovementRow(895);
 }
 
-if (location.search.includes("pets")) {
+if (location.search.includes("interactions")) {
+  const animate = (now: number): void => {
+    renderInteractions(now);
+    window.requestAnimationFrame(animate);
+  };
+  window.requestAnimationFrame(animate);
+} else if (location.search.includes("pets")) {
   void warmStorybookPetAtlases();
   const animate = (now: number): void => {
     renderPets(now);
+    window.requestAnimationFrame(animate);
+  };
+  window.requestAnimationFrame(animate);
+} else if (location.search.includes("occupations")) {
+  void warmOccupationCharacterAtlases();
+  const animate = (now: number): void => {
+    renderOccupations(now);
     window.requestAnimationFrame(animate);
   };
   window.requestAnimationFrame(animate);

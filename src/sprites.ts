@@ -19,6 +19,12 @@ import {
   drawStorybookPet,
   type PetFacing,
 } from "./storybook-pets";
+import { isSameStagePeerKind } from "./friends";
+import {
+  npcRoleStyle,
+  type CharacterExpression,
+  type NpcRoleCue,
+} from "./character-interactions";
 
 // ---------------------------------------------------------------------------
 // All drawing. The canvas is supersampled (see ui.ts) and rendered smoothly, so
@@ -945,6 +951,13 @@ export function personLook(
   const palette = heritagePalette(heritage);
   let profileIndex = PERSON_PROFILE[s.age];
   if (stageIndex !== undefined) {
+    if (
+      stageIndex >= 1 &&
+      stageIndex <= 6 &&
+      isSameStagePeerKind(kind)
+    ) {
+      profileIndex = stageIndex;
+    }
     if (kind === "sibling") {
       if (stageIndex === 0) profileIndex = 2;
       else if (stageIndex === 1) profileIndex = 0;
@@ -1008,11 +1021,245 @@ export function personLook(
 // Character rendering
 // ===========================================================================
 
-export function drawCharacter(ctx: CanvasRenderingContext2D, cx: number, footY: number, look: AvatarLook, walkPhase: number, motionInput: AvatarMotion | boolean): void {
+function drawInteractionExpression(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  footY: number,
+  look: AvatarLook,
+  walkPhase: number,
+  motion: AvatarMotion,
+  expression: CharacterExpression
+): void {
+  if (expression === "neutral" || motion.facing === "back") return;
+
+  const height = storybookVisualHeight(look);
+  const seated =
+    motion.pose === "sit" ||
+    (look.baby && !motion.moving && motion.pose !== "stand");
+  const headX = cx + (look.baby && !seated ? height * 0.1 : 0);
+  const headY =
+    footY -
+    height *
+      (seated ? 0.78 : look.baby ? 0.62 : 0.81);
+  const sideSign = motion.facing === "left" ? -1 : 1;
+  const cueX = headX + sideSign * height * 0.24;
+  const cueY = headY - height * 0.02;
+  const radius = Math.max(3, Math.min(5.5, height * 0.035));
+  const lineWidth = Math.max(
+    1.25,
+    Math.min(2, height * 0.012)
+  );
+  const pulse =
+    0.92 +
+    0.08 * Math.sin(walkPhase * 5.5);
+
+  ctx.save();
+  ctx.translate(cueX, cueY);
+  ctx.scale(pulse, pulse);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.fillStyle = "rgba(24,20,38,0.82)";
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth = Math.max(0.8, lineWidth * 0.65);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  if (expression === "smile") {
+    ctx.strokeStyle = "#ffd56f";
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(-radius * 0.72, -radius * 0.1);
+    ctx.quadraticCurveTo(
+      0,
+      radius * 0.78,
+      radius * 0.72,
+      -radius * 0.1
+    );
+    ctx.stroke();
+    ctx.fillStyle = "#ff8ba1";
+    ctx.beginPath();
+    ctx.arc(
+      radius * 0.92,
+      -radius * 0.9,
+      Math.max(1, radius * 0.3),
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  } else if (expression === "talk") {
+    const dotR = Math.max(0.8, radius * 0.22);
+    for (let i = 0; i < 3; i += 1) {
+      const dotPulse =
+        0.65 +
+        0.35 *
+          Math.max(0, Math.sin(walkPhase * 6.5 - i * 0.8));
+      ctx.fillStyle = `rgba(255,255,255,${dotPulse})`;
+      ctx.beginPath();
+      ctx.arc(
+        (i - 1) * dotR * 2.5,
+        0,
+        dotR,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+  } else {
+    ctx.strokeStyle =
+      expression === "stern" ? "#ff697b" : "#b9c7db";
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    if (expression === "stern") {
+      ctx.moveTo(-radius * 0.75, radius * 0.35);
+      ctx.quadraticCurveTo(
+        0,
+        -radius * 0.5,
+        radius * 0.75,
+        radius * 0.35
+      );
+    } else {
+      ctx.moveTo(-radius * 0.7, 0);
+      ctx.lineTo(radius * 0.7, radius * 0.16);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawNpcRoleCue(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  footY: number,
+  look: AvatarLook,
+  cue: NpcRoleCue,
+  t: number
+): void {
+  if (cue === "none") return;
+  const height = storybookVisualHeight(look);
+  const eyeY = footY - height * 0.755;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (cue === "riskyCrowd") {
+    const lensW = Math.max(3.2, height * 0.044);
+    const lensH = Math.max(1.8, height * 0.021);
+    const gap = Math.max(1.3, height * 0.011);
+    ctx.fillStyle = "rgba(18,21,29,0.94)";
+    ctx.strokeStyle = "#713743";
+    ctx.lineWidth = Math.max(0.9, height * 0.008);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(
+        cx + side * (gap + lensW * 0.9),
+        eyeY,
+        lensW,
+        lensH,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#1a1d28";
+    ctx.beginPath();
+    ctx.moveTo(cx - gap, eyeY);
+    ctx.lineTo(cx + gap, eyeY);
+    ctx.stroke();
+
+    // A small warning chevron is a role cue, not a culture-coded costume.
+    const badgeX = cx + height * 0.18;
+    const badgeY = footY - height * 0.48;
+    ctx.fillStyle = "rgba(190,50,67,0.92)";
+    ctx.beginPath();
+    ctx.moveTo(badgeX, badgeY - height * 0.026);
+    ctx.lineTo(badgeX + height * 0.023, badgeY);
+    ctx.lineTo(badgeX, badgeY + height * 0.026);
+    ctx.lineTo(badgeX - height * 0.023, badgeY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#fff1d8";
+    ctx.font = `bold ${Math.max(5, height * 0.044)}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("!", badgeX, badgeY + 0.5);
+  } else if (cue === "smokePressure") {
+    const x = cx + height * 0.16;
+    const y = footY - height * 0.62;
+    ctx.strokeStyle = "rgba(203,209,218,0.82)";
+    ctx.lineWidth = Math.max(1.2, height * 0.011);
+    for (let i = 0; i < 2; i += 1) {
+      const drift = Math.sin(t * 2.2 + i) * height * 0.008;
+      ctx.beginPath();
+      ctx.moveTo(x + i * height * 0.022, y);
+      ctx.bezierCurveTo(
+        x - height * 0.02 + drift,
+        y - height * 0.035,
+        x + height * 0.028 + drift,
+        y - height * 0.07,
+        x + drift,
+        y - height * 0.105
+      );
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(190,198,209,0.58)";
+    for (let i = 0; i < 3; i += 1) {
+      const drift =
+        Math.sin(t * 1.8 + i * 0.9) * height * 0.01;
+      ctx.beginPath();
+      ctx.arc(
+        x + drift + i * height * 0.012,
+        y - height * (0.04 + i * 0.032),
+        Math.max(1.2, height * (0.012 + i * 0.002)),
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+  } else {
+    const chestY = footY - height * 0.44;
+    ctx.strokeStyle = "#f1c45a";
+    ctx.lineWidth = Math.max(1, height * 0.01);
+    ctx.beginPath();
+    ctx.arc(cx, chestY, height * 0.07, 0.18 * Math.PI, 0.82 * Math.PI);
+    ctx.stroke();
+    const sparkleX = cx + height * 0.16;
+    const sparkleY =
+      footY - height * 0.64 + Math.sin(t * 3) * height * 0.008;
+    ctx.fillStyle = "#ffd66b";
+    ctx.font = `${Math.max(7, height * 0.07)}px system-ui`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("✦", sparkleX, sparkleY);
+  }
+  ctx.restore();
+}
+
+export function drawCharacter(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  footY: number,
+  look: AvatarLook,
+  walkPhase: number,
+  motionInput: AvatarMotion | boolean,
+  expression: CharacterExpression = "neutral"
+): void {
   const motion = motionFrom(motionInput);
   if (!drawStorybookCharacter(ctx, cx, footY, look, walkPhase, motion)) {
     drawCuteCharacter(ctx, cx, footY, look, walkPhase, motion);
   }
+  drawInteractionExpression(
+    ctx,
+    cx,
+    footY,
+    look,
+    walkPhase,
+    motion,
+    expression
+  );
 }
 
 /** Kept as an unexported rollback reference while v5's renderer is reviewed.
@@ -2900,8 +3147,24 @@ function drawCrawlingBabyBack(ctx: CanvasRenderingContext2D, cx: number, footY: 
   ellipse(ctx, headCx, headCy - headR * 0.86, headR * 0.16, headR * 0.13, look.hair);
 }
 
-export function drawAvatar(ctx: CanvasRenderingContext2D, cx: number, footY: number, look: AvatarLook, walkPhase: number, motion: AvatarMotion): void {
-  drawCharacter(ctx, cx, footY, look, walkPhase, motion);
+export function drawAvatar(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  footY: number,
+  look: AvatarLook,
+  walkPhase: number,
+  motion: AvatarMotion,
+  expression: CharacterExpression = "neutral"
+): void {
+  drawCharacter(
+    ctx,
+    cx,
+    footY,
+    look,
+    walkPhase,
+    motion,
+    expression
+  );
 }
 
 const PERSON_LABEL: Record<PersonKind, string> = {
@@ -2915,6 +3178,7 @@ const PERSON_LABEL: Record<PersonKind, string> = {
 export interface PersonDrawOptions {
   seated?: boolean;
   appearance?: CharacterAppearanceId;
+  expression?: CharacterExpression;
 }
 
 export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: number, kind: PersonKind, playerGender: Gender, label: string, focused: boolean, used: boolean, t: number, stageIndex?: number, heritage: HeritageStyle = "western", options: PersonDrawOptions = {}): void {
@@ -2939,9 +3203,12 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
       facing: "front",
       verticalBias: 0,
       pose: seated ? "sit" : undefined,
-    }
+    },
+    options.expression
   );
   ctx.restore();
+  const role = npcRoleStyle(kind);
+  drawNpcRoleCue(ctx, cx, footY, look, role.cue, t);
   const name = label || PERSON_LABEL[kind];
   if (focused) {
     ctx.fillStyle = `rgba(255,235,170,${0.2 + 0.12 * Math.sin(t * 6)})`;
@@ -2955,7 +3222,19 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
       storybookVisualHeight(look) * (seated ? 0.78 : 1) -
       10
   );
-  drawNamePlate(ctx, cx, labelY, name, focused ? "#ffe9a8" : "rgba(255,255,255,0.9)");
+  const roleColor =
+    role.disposition === "hostile"
+      ? "#ff9aa8"
+      : role.disposition === "risky"
+        ? "#ffd078"
+        : "rgba(255,255,255,0.9)";
+  drawNamePlate(
+    ctx,
+    cx,
+    labelY,
+    name,
+    focused ? "#ffe9a8" : roleColor
+  );
   if (used) {
     ctx.fillStyle = "#3ddc84";
     ctx.font = "bold 13px system-ui, sans-serif";
