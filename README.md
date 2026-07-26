@@ -132,8 +132,13 @@ The v5 character redesign is documented in
 [`V5-CHARACTER-STYLE.md`](V5-CHARACTER-STYLE.md). During development,
 `avatar-preview.html?matrix` renders the age, facing, gender and heritage
 review matrix used to validate the generated atlas system and its Canvas
-fallback. The added teenage, university, and middle-age work is recorded in
+fallback. `avatar-preview.html?motion` animates all four facings and the
+floor-seated pose while cycling through every age band; add `&stage=0` through
+`&stage=11` to hold one life stage for close review. The added teenage,
+university, and middle-age work is recorded in
 [`V5_CHARACTER_STAGE_EXPANSION_WORKLOG.md`](V5_CHARACTER_STAGE_EXPANSION_WORKLOG.md).
+The seated-newborn and body-motion release is recorded in
+[`V5_NEWBORN_SEATED_AND_MOTION_WORKLOG.md`](V5_NEWBORN_SEATED_AND_MOTION_WORKLOG.md).
 
 ## 📖 Biography mode
 
@@ -159,9 +164,11 @@ the game does not transmit personal information.
 - **Vite + TypeScript** and a hand-rolled **HTML5 Canvas** renderer — no game engine.
 - Zero runtime dependencies; everything runs in the browser, nothing is stored or sent.
 - Characters use original **cozy storybook-chibi raster atlases**, separated by
-  gender and heritage, with eight coherent age bands and 256 dedicated front,
-  side, and back frames. Middle school, university, and midlife now have their
-  own art instead of reusing child or general-adult rows. A deterministic Canvas
+  gender and heritage, with eight coherent age bands, four-direction two-frame
+  body movement, and a genuine floor-seated pose for every identity. The
+  system now contains 256 reviewed neutral frames plus 320 motion/seated
+  companion frames. Middle school, university, and midlife have their own art
+  instead of reusing child or general-adult rows. A deterministic Canvas
   renderer remains as a safe loading and error fallback.
 
 ## 💻 Develop

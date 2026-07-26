@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const CELL_SIZE = 256;
 const COLUMNS = 4;
+const MOTION_COLUMNS = 5;
 const BASE_ROWS = 5;
 const EXPANSION_ROWS = 3;
 const MIN_VISIBLE_PIXELS_PER_CELL = 1_000;
@@ -30,6 +31,26 @@ const expectedExpansionAtlases = [
   "character-stage-expansion-middleEastern-male.png",
   "character-stage-expansion-western-female.png",
   "character-stage-expansion-western-male.png",
+];
+const expectedMotionBaseAtlases = [
+  "character-motion-base-asian-female.png",
+  "character-motion-base-asian-male.png",
+  "character-motion-base-black-female.png",
+  "character-motion-base-black-male.png",
+  "character-motion-base-middleEastern-female.png",
+  "character-motion-base-middleEastern-male.png",
+  "character-motion-base-western-female.png",
+  "character-motion-base-western-male.png",
+];
+const expectedMotionExpansionAtlases = [
+  "character-motion-expansion-asian-female.png",
+  "character-motion-expansion-asian-male.png",
+  "character-motion-expansion-black-female.png",
+  "character-motion-expansion-black-male.png",
+  "character-motion-expansion-middleEastern-female.png",
+  "character-motion-expansion-middleEastern-male.png",
+  "character-motion-expansion-western-female.png",
+  "character-motion-expansion-western-male.png",
 ];
 const pngSignature = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -161,6 +182,31 @@ function visiblePixelsInCell(image, row, column) {
   return visiblePixels;
 }
 
+function visibleBoundsInCell(image, row, column) {
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  let minX = CELL_SIZE;
+  let minY = CELL_SIZE;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < CELL_SIZE; y += 1) {
+    for (let x = 0; x < CELL_SIZE; x += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) * 4 + 3
+        ];
+      if (alpha <= 8) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return maxX < 0
+    ? undefined
+    : { minX, minY, maxX: maxX + 1, maxY: maxY + 1 };
+}
+
 describe("v5 character atlas assets", () => {
   it("checks in exactly the eight expected runtime atlases", () => {
     const actualAtlases = readdirSync(atlasDirectory)
@@ -216,5 +262,98 @@ describe("v5 character atlas assets", () => {
       }
       expect(populatedCells).toHaveLength(EXPANSION_ROWS * COLUMNS);
     });
+  }
+
+  it("checks in exactly the sixteen expected motion companion atlases", () => {
+    const actualAtlases = readdirSync(atlasDirectory)
+      .filter((name) =>
+        /^character-motion-(base|expansion)-.*\.png$/.test(name)
+      )
+      .sort();
+    expect(actualAtlases).toEqual(
+      [...expectedMotionBaseAtlases, ...expectedMotionExpansionAtlases].sort()
+    );
+  });
+
+  for (const [filenames, rows, motionPrefix, neutralPrefix] of [
+    [
+      expectedMotionBaseAtlases,
+      BASE_ROWS,
+      "character-motion-base-",
+      "character-atlas-",
+    ],
+    [
+      expectedMotionExpansionAtlases,
+      EXPANSION_ROWS,
+      "character-motion-expansion-",
+      "character-stage-expansion-",
+    ],
+  ]) {
+    for (const filename of filenames) {
+      it(`${filename} is a clean populated 5 x ${rows} RGBA atlas`, () => {
+        const image = decodeRgbaPng(`${atlasDirectory}/${filename}`);
+        const neutral = decodeRgbaPng(
+          `${atlasDirectory}/${neutralPrefix}${filename.slice(motionPrefix.length)}`
+        );
+        expect([image.width, image.height]).toEqual([
+          MOTION_COLUMNS * CELL_SIZE,
+          rows * CELL_SIZE,
+        ]);
+
+        const populatedCells = [];
+        let opaqueChromaPixels = 0;
+        for (let row = 0; row < rows; row += 1) {
+          for (let column = 0; column < MOTION_COLUMNS; column += 1) {
+            const visiblePixels = visiblePixelsInCell(
+              image,
+              row,
+              column
+            );
+            const bounds = visibleBoundsInCell(image, row, column);
+            if (visiblePixels >= MIN_VISIBLE_PIXELS_PER_CELL) {
+              populatedCells.push(`${row}:${column}`);
+            }
+            expect(bounds).toBeDefined();
+            expect(bounds.minX).toBeGreaterThanOrEqual(5);
+            expect(bounds.minY).toBeGreaterThanOrEqual(5);
+            expect(bounds.maxX).toBeLessThanOrEqual(CELL_SIZE - 5);
+            expect(bounds.maxY).toBeLessThanOrEqual(CELL_SIZE - 5);
+            if (column < COLUMNS) {
+              const neutralBounds = visibleBoundsInCell(
+                neutral,
+                row,
+                column
+              );
+              expect(neutralBounds).toBeDefined();
+              const motionHeight = bounds.maxY - bounds.minY;
+              const neutralHeight =
+                neutralBounds.maxY - neutralBounds.minY;
+              expect(motionHeight / neutralHeight).toBeGreaterThanOrEqual(
+                0.98
+              );
+              expect(motionHeight / neutralHeight).toBeLessThanOrEqual(
+                1.05
+              );
+            }
+          }
+        }
+        for (let offset = 0; offset < image.rgba.length; offset += 4) {
+          const red = image.rgba[offset];
+          const green = image.rgba[offset + 1];
+          const blue = image.rgba[offset + 2];
+          const alpha = image.rgba[offset + 3];
+          if (
+            alpha > 8 &&
+            red >= 250 &&
+            green <= 8 &&
+            blue >= 250
+          ) {
+            opaqueChromaPixels += 1;
+          }
+        }
+        expect(populatedCells).toHaveLength(rows * MOTION_COLUMNS);
+        expect(opaqueChromaPixels).toBe(0);
+      });
+    }
   }
 });

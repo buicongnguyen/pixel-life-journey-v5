@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { avatarLook, personLook } from "./sprites";
 import {
-  drawStorybookCharacter,
   storybookAgeBand,
+  storybookAnimationFrameForLook,
   storybookFrameForLook,
   storybookGroundAnchorForFrame,
+  storybookUsesMotionFrame,
   warmStorybookCharacterAtlases,
 } from "./storybook-characters";
 import type { CuteFacing } from "./cute-characters";
@@ -101,7 +102,7 @@ describe("v5 storybook sprite selection", () => {
     ).toBe("elder");
   });
 
-  it("warms all sixteen base and expansion sheets when no heritage is filtered", async () => {
+  it("warms all 32 neutral, motion, and seated sheets when no heritage is filtered", async () => {
     const originalImage = globalThis.Image;
     const requestedSources: string[] = [];
 
@@ -140,8 +141,8 @@ describe("v5 storybook sprite selection", () => {
       });
     }
 
-    expect(requestedSources).toHaveLength(16);
-    expect(new Set(requestedSources).size).toBe(16);
+    expect(requestedSources).toHaveLength(32);
+    expect(new Set(requestedSources).size).toBe(32);
   });
 
   it("selects a valid dedicated frame for every stage, gender, heritage, and facing", () => {
@@ -211,21 +212,146 @@ describe("v5 storybook sprite selection", () => {
     expect(visitedFrames.size).toBe(256);
   });
 
-  it("uses the procedural fallback instead of distorting a standing frame for seated poses", () => {
-    const rendered = drawStorybookCharacter(
-      {} as CanvasRenderingContext2D,
-      100,
-      100,
-      avatarLook(7, "female", "western"),
-      0,
-      {
-        moving: false,
-        facing: "front",
-        verticalBias: 0,
-        pose: "sit",
+  it("alternates a neutral and a true motion cell in every direction", () => {
+    const motionPhase = Math.PI / (2 * 1.85);
+    expect(storybookUsesMotionFrame(0)).toBe(false);
+    expect(storybookUsesMotionFrame(motionPhase)).toBe(true);
+
+    for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
+      for (const gender of genders) {
+        for (const heritage of heritages) {
+          for (const facing of facings) {
+            const look = avatarLook(stage, gender, heritage);
+            const motion = {
+              moving: true,
+              facing,
+              verticalBias: 0,
+            } as const;
+            const neutral = storybookAnimationFrameForLook(
+              look,
+              motion,
+              0
+            );
+            const step = storybookAnimationFrameForLook(
+              look,
+              motion,
+              motionPhase
+            );
+
+            expect(neutral.atlasFamily).toMatch(
+              /^(base|expansion)$/
+            );
+            expect(step.atlasFamily).toBe(
+              neutral.atlasFamily === "base"
+                ? "motionBase"
+                : "motionExpansion"
+            );
+            expect(step.column).toBe(neutral.column);
+            expect(step.row).toBe(neutral.row);
+            expect(step.atlasKey).toBe(neutral.atlasKey);
+          }
+        }
       }
+    }
+  });
+
+  it("uses genuine floor-seated motion art for all 64 character identities", () => {
+    const visited = new Set<string>();
+    for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
+      for (const gender of genders) {
+        for (const heritage of heritages) {
+          const frame = storybookAnimationFrameForLook(
+            avatarLook(stage, gender, heritage),
+            {
+              moving: false,
+              facing: "back",
+              verticalBias: 0,
+              pose: "sit",
+            },
+            0
+          );
+          const anchor = storybookGroundAnchorForFrame(frame);
+          visited.add(
+            `${frame.atlasFamily}:${frame.atlasKey}:${frame.row}:${frame.column}`
+          );
+
+          expect(frame.atlasFamily).toMatch(
+            /^motion(Base|Expansion)$/
+          );
+          expect(frame.column).toBe(4);
+          expect(anchor).not.toBeNull();
+        }
+      }
+    }
+    expect(visited.size).toBe(64);
+  });
+
+  it("shows an idle newborn seated, then switches to directional crawl frames", () => {
+    const look = avatarLook(0, "female", "asian");
+    const idle = storybookAnimationFrameForLook(
+      look,
+      { moving: false, facing: "back", verticalBias: 0 },
+      0
+    );
+    const crawlNeutral = storybookAnimationFrameForLook(
+      look,
+      { moving: true, facing: "left", verticalBias: 0 },
+      0
+    );
+    const crawlStep = storybookAnimationFrameForLook(
+      look,
+      { moving: true, facing: "left", verticalBias: 0 },
+      Math.PI / (2 * 1.85)
     );
 
-    expect(rendered).toBe(false);
+    expect(idle.atlasFamily).toBe("motionBase");
+    expect(idle.column).toBe(4);
+    expect(crawlNeutral.atlasFamily).toBe("base");
+    expect(crawlNeutral.column).toBe(1);
+    expect(crawlStep.atlasFamily).toBe("motionBase");
+    expect(crawlStep.column).toBe(1);
+  });
+
+  it("has valid anchors for all 320 generated motion and seated cells", () => {
+    const motionPhase = Math.PI / (2 * 1.85);
+    const visited = new Set<string>();
+    for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
+      for (const gender of genders) {
+        for (const heritage of heritages) {
+          const look = avatarLook(stage, gender, heritage);
+          for (const facing of facings) {
+            const frame = storybookAnimationFrameForLook(
+              look,
+              { moving: true, facing, verticalBias: 0 },
+              motionPhase
+            );
+            const anchor = storybookGroundAnchorForFrame(frame);
+            visited.add(
+              `${frame.atlasFamily}:${frame.atlasKey}:${frame.row}:${frame.column}`
+            );
+            expect(anchor).not.toBeNull();
+            expect(anchor?.[0]).toBeGreaterThanOrEqual(0);
+            expect(anchor?.[0]).toBeLessThanOrEqual(256);
+            expect(anchor?.[1]).toBeGreaterThanOrEqual(0);
+            expect(anchor?.[1]).toBeLessThanOrEqual(256);
+          }
+          const seated = storybookAnimationFrameForLook(
+            look,
+            {
+              moving: false,
+              facing: "front",
+              verticalBias: 0,
+              pose: "sit",
+            },
+            0
+          );
+          visited.add(
+            `${seated.atlasFamily}:${seated.atlasKey}:${seated.row}:${seated.column}`
+          );
+          expect(storybookGroundAnchorForFrame(seated)).not.toBeNull();
+        }
+      }
+    }
+    expect(visited.size).toBe(320);
   });
 });

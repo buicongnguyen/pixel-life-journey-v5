@@ -5,6 +5,7 @@ import type {
 } from "./cute-characters";
 import groundAnchorManifest from "./assets/characters/character-anchors.json";
 import expansionGroundAnchorManifest from "./assets/characters/character-stage-expansion-anchors.json";
+import motionGroundAnchorManifest from "./assets/characters/character-motion-anchors.json";
 import type { Gender, HeritageStyle } from "./types";
 
 export type StorybookAgeBand =
@@ -16,7 +17,11 @@ export type StorybookAgeBand =
   | "adult"
   | "middleAge"
   | "elder";
-export type StorybookAtlasFamily = "base" | "expansion";
+export type StorybookStaticAtlasFamily = "base" | "expansion";
+export type StorybookAtlasFamily =
+  | StorybookStaticAtlasFamily
+  | "motionBase"
+  | "motionExpansion";
 
 export interface StorybookFrame {
   atlasKey: `${HeritageStyle}-${Gender}`;
@@ -38,10 +43,35 @@ interface StorybookAnchorManifest {
   >;
 }
 
+interface StorybookMotionAnchorManifest {
+  version: 1;
+  cellSize: number;
+  anchorSpace: "source-cell-pixels";
+  columns: readonly [
+    "frontStep",
+    "screenLeftStep",
+    "backStep",
+    "screenRightStep",
+    "floorSeatedFront",
+  ];
+  families: Record<
+    StorybookStaticAtlasFamily,
+    {
+      rows: readonly StorybookAgeBand[];
+      atlases: Record<
+        StorybookFrame["atlasKey"],
+        readonly (readonly StorybookGroundAnchor[])[]
+      >;
+    }
+  >;
+}
+
 const STORYBOOK_ANCHORS =
   groundAnchorManifest as unknown as StorybookAnchorManifest;
 const EXPANSION_STORYBOOK_ANCHORS =
   expansionGroundAnchorManifest as unknown as StorybookAnchorManifest;
+const MOTION_STORYBOOK_ANCHORS =
+  motionGroundAnchorManifest as unknown as StorybookMotionAnchorManifest;
 const CELL_SIZE = STORYBOOK_ANCHORS.cellSize;
 const STORYBOOK_VISUAL_SCALE = 1.15;
 
@@ -57,7 +87,7 @@ const FACING_COLUMN: Record<CuteFacing, number> = {
 
 const AGE_FRAME: Record<
   StorybookAgeBand,
-  { atlasFamily: StorybookAtlasFamily; row: number }
+  { atlasFamily: StorybookStaticAtlasFamily; row: number }
 > = {
   baby: { atlasFamily: "base", row: 0 },
   child: { atlasFamily: "base", row: 1 },
@@ -158,12 +188,106 @@ const EXPANSION_ATLAS_URLS: Record<
   },
 };
 
+const MOTION_BASE_ATLAS_URLS: Record<
+  HeritageStyle,
+  Record<Gender, string>
+> = {
+  western: {
+    male: new URL(
+      "./assets/characters/character-motion-base-western-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-base-western-female.png",
+      import.meta.url
+    ).href,
+  },
+  asian: {
+    male: new URL(
+      "./assets/characters/character-motion-base-asian-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-base-asian-female.png",
+      import.meta.url
+    ).href,
+  },
+  middleEastern: {
+    male: new URL(
+      "./assets/characters/character-motion-base-middleEastern-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-base-middleEastern-female.png",
+      import.meta.url
+    ).href,
+  },
+  black: {
+    male: new URL(
+      "./assets/characters/character-motion-base-black-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-base-black-female.png",
+      import.meta.url
+    ).href,
+  },
+};
+
+const MOTION_EXPANSION_ATLAS_URLS: Record<
+  HeritageStyle,
+  Record<Gender, string>
+> = {
+  western: {
+    male: new URL(
+      "./assets/characters/character-motion-expansion-western-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-expansion-western-female.png",
+      import.meta.url
+    ).href,
+  },
+  asian: {
+    male: new URL(
+      "./assets/characters/character-motion-expansion-asian-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-expansion-asian-female.png",
+      import.meta.url
+    ).href,
+  },
+  middleEastern: {
+    male: new URL(
+      "./assets/characters/character-motion-expansion-middleEastern-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-expansion-middleEastern-female.png",
+      import.meta.url
+    ).href,
+  },
+  black: {
+    male: new URL(
+      "./assets/characters/character-motion-expansion-black-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-motion-expansion-black-female.png",
+      import.meta.url
+    ).href,
+  },
+};
+
 const ATLAS_URLS: Record<
   StorybookAtlasFamily,
   Record<HeritageStyle, Record<Gender, string>>
 > = {
   base: BASE_ATLAS_URLS,
   expansion: EXPANSION_ATLAS_URLS,
+  motionBase: MOTION_BASE_ATLAS_URLS,
+  motionExpansion: MOTION_EXPANSION_ATLAS_URLS,
 };
 
 interface AtlasState {
@@ -229,17 +353,81 @@ export function storybookFrameForLook(
   };
 }
 
+function motionAtlasFamily(
+  atlasFamily: StorybookStaticAtlasFamily
+): StorybookAtlasFamily {
+  return atlasFamily === "base" ? "motionBase" : "motionExpansion";
+}
+
+function staticAtlasFamily(
+  atlasFamily: StorybookAtlasFamily
+): StorybookStaticAtlasFamily {
+  return atlasFamily === "expansion" ||
+    atlasFamily === "motionExpansion"
+    ? "expansion"
+    : "base";
+}
+
+/** The generated step pose occupies the positive half of each walk cycle. */
+export function storybookUsesMotionFrame(walkPhase: number): boolean {
+  return Math.sin(walkPhase * 1.85) > 0;
+}
+
+/**
+ * Resolve the exact static, motion, or seated cell for a gameplay frame.
+ * Moving characters alternate their reviewed neutral pose with a visibly
+ * different generated step/crawl pose. Seated art is always front-facing.
+ */
+export function storybookAnimationFrameForLook(
+  look: CuteCharacterLook,
+  motion: CuteCharacterMotion,
+  walkPhase: number
+): StorybookFrame {
+  const neutral = storybookFrameForLook(look, motion.facing);
+  const seated =
+    motion.pose === "sit" ||
+    (look.baby && !motion.moving && motion.pose !== "stand");
+  if (seated) {
+    return {
+      ...neutral,
+      atlasFamily: motionAtlasFamily(
+        neutral.atlasFamily as StorybookStaticAtlasFamily
+      ),
+      column: 4,
+    };
+  }
+  if (motion.moving && storybookUsesMotionFrame(walkPhase)) {
+    return {
+      ...neutral,
+      atlasFamily: motionAtlasFamily(
+        neutral.atlasFamily as StorybookStaticAtlasFamily
+      ),
+    };
+  }
+  return neutral;
+}
+
 export function storybookGroundAnchorForFrame(
   frame: StorybookFrame
 ): StorybookGroundAnchor | null {
+  if (
+    frame.atlasFamily === "motionBase" ||
+    frame.atlasFamily === "motionExpansion"
+  ) {
+    const family = staticAtlasFamily(frame.atlasFamily);
+    return (
+      MOTION_STORYBOOK_ANCHORS.families[family].atlases[
+        frame.atlasKey
+      ]?.[frame.row]?.[frame.column] ?? null
+    );
+  }
   const anchors =
     frame.atlasFamily === "expansion"
       ? EXPANSION_STORYBOOK_ANCHORS
       : STORYBOOK_ANCHORS;
-  return (
-    anchors.atlases[frame.atlasKey]?.[frame.row]?.[frame.column] ??
-    null
-  );
+  return anchors.atlases[frame.atlasKey]?.[frame.row]?.[
+    frame.column
+  ] ?? null;
 }
 
 function atlasStateFor(
@@ -261,14 +449,27 @@ function atlasStateFor(
     readyPromise: Promise.resolve(),
   };
   state.readyPromise = new Promise<void>((resolve) => {
+    const markReady = async (): Promise<void> => {
+      try {
+        if (typeof image.decode === "function") {
+          await image.decode();
+        }
+      } catch {
+        // A loaded image remains drawable when an eager decode hint is
+        // unsupported or rejected by the browser.
+      }
+      state.ready = image.naturalWidth > 0;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("plj:character-atlas-ready")
+        );
+      }
+      resolve();
+    };
     image.addEventListener(
       "load",
       () => {
-        state.ready = image.naturalWidth > 0;
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("plj:character-atlas-ready"));
-        }
-        resolve();
+        void markReady();
       },
       { once: true }
     );
@@ -286,9 +487,9 @@ function atlasStateFor(
   return state;
 }
 
-/** Decode both base and expansion gender pairs for one or every heritage. */
-export async function warmStorybookCharacterAtlases(
-  selectedHeritage?: HeritageStyle
+async function warmStorybookAtlasFamilies(
+  selectedHeritage: HeritageStyle | undefined,
+  atlasFamilies: readonly StorybookAtlasFamily[]
 ): Promise<void> {
   if (typeof Image === "undefined") return;
   const loads: Promise<void>[] = [];
@@ -296,7 +497,7 @@ export async function warmStorybookCharacterAtlases(
     ? [selectedHeritage]
     : (Object.keys(BASE_ATLAS_URLS) as HeritageStyle[]);
   for (const heritage of heritages) {
-    for (const atlasFamily of ["base", "expansion"] as const) {
+    for (const atlasFamily of atlasFamilies) {
       for (const gender of ["male", "female"] as const) {
         const state = atlasStateFor(atlasFamily, heritage, gender);
         if (state) loads.push(state.readyPromise);
@@ -304,6 +505,18 @@ export async function warmStorybookCharacterAtlases(
     }
   }
   await Promise.all(loads);
+}
+
+/** Decode neutral, movement, and seated gender pairs for one or every heritage. */
+export async function warmStorybookCharacterAtlases(
+  selectedHeritage?: HeritageStyle
+): Promise<void> {
+  await warmStorybookAtlasFamilies(selectedHeritage, [
+    "base",
+    "expansion",
+    "motionBase",
+    "motionExpansion",
+  ]);
 }
 
 function drawGroundShadow(
@@ -342,31 +555,50 @@ export function drawStorybookCharacter(
   walkPhase: number,
   motion: CuteCharacterMotion
 ): boolean {
-  // The generated sheets contain only upright turnarounds. Distorting one into
-  // a seated pose changes the character's proportions, so let the caller use
-  // the purpose-built procedural seated renderer instead.
-  if (motion.pose === "sit") return false;
-
-  const frame = storybookFrameForLook(look, motion.facing);
-  const atlas = atlasStateFor(
+  let frame = storybookAnimationFrameForLook(
+    look,
+    motion,
+    walkPhase
+  );
+  let atlas = atlasStateFor(
     frame.atlasFamily,
     look.heritage,
     look.gender
   );
+  const requestedMotion =
+    frame.atlasFamily === "motionBase" ||
+    frame.atlasFamily === "motionExpansion";
+
+  // Keep the generated identity on screen while a companion sheet decodes.
+  // Entry/resume normally awaits every selected-heritage sheet, but this path
+  // prevents an abrupt switch to a different procedural character on slow
+  // devices or after an individual motion-image failure.
+  if (requestedMotion && (!atlas || !atlas.ready || atlas.failed)) {
+    frame = storybookFrameForLook(look, motion.facing);
+    atlas = atlasStateFor(
+      frame.atlasFamily,
+      look.heritage,
+      look.gender
+    );
+  }
   if (!atlas || !atlas.ready || atlas.failed) return false;
   const anchor = storybookGroundAnchorForFrame(frame);
   if (!anchor) return false;
 
   const height = storybookVisualHeight(look);
-  // Square normalized cells preserve each generated frame's natural silhouette.
-  // Crawling babies get a little more horizontal room without changing height.
-  const width = height * (look.baby ? 1.14 : 1);
-  const stride = motion.moving ? Math.sin(walkPhase * 1.85) : 0;
-  const bob = motion.moving
-    ? Math.abs(Math.sin(walkPhase * 1.85)) * Math.max(1, height * 0.018)
+  // Square normalized cells preserve the reviewed proportions, including the
+  // naturally wider crawl and floor-seated silhouettes.
+  const width = height;
+  const seated =
+    (frame.atlasFamily === "motionBase" ||
+      frame.atlasFamily === "motionExpansion") &&
+    frame.column === 4;
+  const bob = seated
+    ? 0
+    : motion.moving
+    ? Math.abs(Math.sin(walkPhase * 1.85)) *
+      Math.max(0.4, height * 0.006)
     : Math.sin(walkPhase * 0.7) * Math.max(0.35, height * 0.004);
-  const sideFacing = motion.facing === "left" || motion.facing === "right";
-  const lean = motion.moving && sideFacing ? stride * 0.018 : 0;
   const scaleX = width / CELL_SIZE;
   const scaleY = height / CELL_SIZE;
 
@@ -374,7 +606,6 @@ export function drawStorybookCharacter(
 
   ctx.save();
   ctx.translate(cx, footY - bob);
-  ctx.rotate(lean);
   const smoothing = ctx.imageSmoothingEnabled;
   const smoothingQuality = ctx.imageSmoothingQuality;
   ctx.imageSmoothingEnabled = true;
@@ -397,8 +628,8 @@ export function drawStorybookCharacter(
 }
 
 if (typeof window !== "undefined") {
-  // Start the default pair behind the title screen. Entry/resume flows still
-  // await the selected pair explicitly; the Canvas path remains for real image
-  // failures and for poses without generated art.
-  void warmStorybookCharacterAtlases("western");
+  // The title uses the default neutral pair. Motion companions wait for the
+  // selected-character entry/resume flow, avoiding an unnecessary 20 MiB
+  // decoded Western motion set when another heritage is chosen.
+  void warmStorybookAtlasFamilies("western", ["base", "expansion"]);
 }

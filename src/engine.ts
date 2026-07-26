@@ -3942,7 +3942,10 @@ export class Game {
       this.mode === "settings";
     if (inRoom && this.stageIndex < STAGES.length) {
       const s = STAGES[this.stageIndex];
-      const t = this.walkPhase;
+      // Room props and stationary people animate on real scene time. Player
+      // movement keeps its own walkPhase so approaching an NPC never speeds up
+      // that person's idle breathing or focus pulse.
+      const t = this.renderTime;
       const doorActive = this.doorOpen();
       drawRoom(ctx, s.theme, W, H, FLOOR_Y, doorActive, t, {
         scene: s.scene,

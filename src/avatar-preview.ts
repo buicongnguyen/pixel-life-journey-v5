@@ -235,6 +235,94 @@ function renderMatrix(): void {
   });
 }
 
+function renderMotion(now: number): void {
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(0, 0, width, height);
+  drawHeader();
+  const heritages: { id: HeritageStyle; label: string }[] = [
+    { id: "western", label: "Western" },
+    { id: "asian", label: "Asian" },
+    { id: "middleEastern", label: "Middle Eastern" },
+    { id: "black", label: "Black / African diaspora" },
+  ];
+  const representativeStages = [0, 1, 4, 5, 6, 7, 9, 10];
+  const requestedStageValue = new URLSearchParams(
+    location.search
+  ).get("stage");
+  const requestedStage =
+    requestedStageValue === null
+      ? Number.NaN
+      : Number(requestedStageValue);
+  const fixedStage =
+    Number.isInteger(requestedStage) &&
+    requestedStage >= 0 &&
+    requestedStage < stages.length
+      ? requestedStage
+      : null;
+  const ageIndex = fixedStage === null
+    ? Math.floor(now / 2600) % representativeStages.length
+    : representativeStages.indexOf(fixedStage);
+  const stage =
+    fixedStage ?? representativeStages[ageIndex];
+  const ageLabel = [
+    "baby",
+    "child",
+    "early teen",
+    "teen",
+    "young adult",
+    "adult",
+    "middle age",
+    "elder",
+  ][ageIndex] ?? stages[stage];
+  const facings: AvatarFacing[] = [
+    "front",
+    "left",
+    "back",
+    "right",
+  ];
+  const phase = now / 100;
+
+  label(
+    `Animated motion review · ${ageLabel} · male and female kept separate`,
+    width / 2,
+    102
+  );
+  heritages.forEach((heritage, row) => {
+    const footY = 275 + row * 225;
+    lane(footY, heritage.label);
+    (["male", "female"] as const).forEach((gender, genderIndex) => {
+      const groupStart = genderIndex === 0 ? 115 : 895;
+      facings.forEach((facing, facingIndex) => {
+        const x = groupStart + facingIndex * 145;
+        drawCharacter(
+          ctx,
+          x,
+          footY,
+          avatarLook(stage, gender, heritage.id),
+          phase,
+          { moving: true, facing, verticalBias: 0 }
+        );
+        label(`${gender} ${facing}`, x, footY + 46);
+      });
+      const seatedX = groupStart + 4 * 145;
+      drawCharacter(
+        ctx,
+        seatedX,
+        footY,
+        avatarLook(stage, gender, heritage.id),
+        phase,
+        {
+          moving: false,
+          facing: "front",
+          verticalBias: 0,
+          pose: "sit",
+        }
+      );
+      label(`${gender} seated`, seatedX, footY + 46);
+    });
+  });
+}
+
 function render(): void {
   if (location.search.includes("matrix")) {
     renderMatrix();
@@ -265,5 +353,13 @@ function render(): void {
   drawMovementRow(895);
 }
 
-render();
-window.addEventListener("plj:character-atlas-ready", render);
+if (location.search.includes("motion")) {
+  const animate = (now: number): void => {
+    renderMotion(now);
+    window.requestAnimationFrame(animate);
+  };
+  window.requestAnimationFrame(animate);
+} else {
+  render();
+  window.addEventListener("plj:character-atlas-ready", render);
+}

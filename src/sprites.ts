@@ -2889,7 +2889,7 @@ export interface PersonDrawOptions {
 
 export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: number, kind: PersonKind, playerGender: Gender, label: string, focused: boolean, used: boolean, t: number, stageIndex?: number, heritage: HeritageStyle = "western", options: PersonDrawOptions = {}): void {
   const look = personLook(kind, playerGender, stageIndex, heritage);
-  const seated = !!options.seated && !look.baby;
+  const seated = !!options.seated;
   ctx.save();
   if (used) ctx.globalAlpha = 0.5;
   drawCharacter(
@@ -2898,7 +2898,12 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
     footY - (focused ? 1 : 0),
     look,
     t * 1.4,
-    seated ? { moving: false, facing: "front", verticalBias: 0, pose: "sit" } : focused
+    {
+      moving: false,
+      facing: "front",
+      verticalBias: 0,
+      pose: seated ? "sit" : undefined,
+    }
   );
   ctx.restore();
   const name = label || PERSON_LABEL[kind];
@@ -2910,7 +2915,9 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
   }
   const labelY = Math.max(
     14,
-    footY - (seated ? look.heightPx * 0.72 : storybookVisualHeight(look)) - 10
+    footY -
+      storybookVisualHeight(look) * (seated ? 0.78 : 1) -
+      10
   );
   drawNamePlate(ctx, cx, labelY, name, focused ? "#ffe9a8" : "rgba(255,255,255,0.9)");
   if (used) {
