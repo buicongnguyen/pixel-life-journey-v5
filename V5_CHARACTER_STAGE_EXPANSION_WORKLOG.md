@@ -74,7 +74,8 @@ under `src/assets/characters/`.
   warnings or errors.
 - All independent code, visual, and asset-pipeline findings are fixed and the
   reviewers approve release.
-- Commit, push, GitHub Pages verification, and the v4 unchanged check remain.
+- The implementation is committed and pushed, GitHub Pages is verified, and
+  the v4 repository and deployment remain unchanged.
 
 ## Implementation plan
 
@@ -100,5 +101,20 @@ under `src/assets/characters/`.
 - Character matrix:
   <https://buicongnguyen.github.io/pixel-life-journey-v5/avatar-preview.html?matrix>
 
-This file should be updated with the final commit, workflow run, and live
-verification result before the task is considered complete.
+## Release verification
+
+- Implementation commit:
+  `baf1cd5a9b640d6ca23ba8ec0d1733087bd7101c`
+- Successful implementation workflow:
+  <https://github.com/buicongnguyen/pixel-life-journey-v5/actions/runs/30185180958>
+- The live game, matrix page, preview JavaScript, and all new raster assets
+  returned HTTP 200. The live preview bundle contained the middle-school,
+  university, and midlife cases.
+- In-app browser review showed the deployed matrix and game with no console
+  warnings or errors.
+- V4 remained clean locally and remotely at
+  `beaf362db5ef296e8d9c0faa0b209555e0691bc8`; its Pages site continued to
+  return HTTP 200.
+
+This document is a documentation-only follow-up to the verified implementation
+release. Its automatic Pages rebuild publishes the same tested runtime assets.
