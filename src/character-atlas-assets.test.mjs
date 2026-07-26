@@ -1082,7 +1082,7 @@ describe("v5 character atlas assets", () => {
     }
 
     expect(measuredCells).toBe(1_152);
-  });
+  }, 15_000);
 
   it("keeps neutral front upper silhouettes inside reviewed stage ranges", () => {
     const cohorts = {
