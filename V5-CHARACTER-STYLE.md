@@ -16,11 +16,15 @@ art and keeps the Canvas drawings only as a loading/error fallback.
 
 ## Runtime asset system
 
-- Eight independent atlases: four heritage styles × two separate genders.
+- Eight independent base atlases and eight matching stage-expansion atlases:
+  four heritage styles × two separate genders in each family.
 - Male and female identities never share or swap atlas rows.
-- Every atlas follows one coherent identity through baby, child, teen, adult and
-  elder rows.
+- Each base atlas follows one coherent identity through baby, child, teen,
+  adult, and elder rows. Its matching expansion adds early teen, young adult,
+  and middle-age rows without replacing stable base art.
 - Every age row contains a real front, left-side, back and right-side frame.
+- The complete system contains 256 reviewed directional frames: 160 base and 96
+  expansion frames.
 - Generated cells are trimmed and repacked to a fixed 256 px grid so heads,
   shoes and accessories cannot be clipped by assumed source-grid boundaries.
 - Static directional frames stay active while moving; a restrained bob and lean
@@ -75,11 +79,13 @@ details. It never changes the character's humanity, friendliness or quality.
 Male and female presentation is stored in separate atlas families so a life
 cannot accidentally switch gender while aging.
 
-The first atlas release provides one coherent base identity for each
-heritage/gender pair. NPC role and outfit metadata remains in the game model and
-the procedural fallback, but same-age NPCs in one pair currently share that
-base raster identity. Dedicated role variants, seated rows and multi-frame walk
-cycles are later art expansions, not claims of this correction.
+Each heritage/gender pair keeps one coherent identity across its base and
+expansion art. Middle school, university, and midlife have dedicated visual
+rows, so the player no longer jumps directly from child to generic adult art.
+NPC role and outfit metadata remains in the game model and procedural fallback,
+but same-age NPCs in one pair currently share that raster identity. Dedicated
+role variants, seated rows, and multi-frame walk cycles are later art
+expansions, not claims of this release.
 
 ## Reference boundary
 

@@ -209,19 +209,21 @@ function renderMatrix(): void {
     pose?: "stand" | "sit";
     label: string;
   }[] = [
-    { stage: 0, gender: "female", facing: "right", moving: true, label: "baby crawl" },
-    { stage: 3, gender: "male", facing: "left", moving: true, label: "child left" },
-    { stage: 7, gender: "female", facing: "front", moving: false, label: "adult woman" },
-    { stage: 7, gender: "male", facing: "right", moving: true, label: "adult walk" },
-    { stage: 10, gender: "female", facing: "back", moving: false, label: "elder back" },
-    { stage: 11, gender: "male", facing: "front", moving: false, label: "elder front" },
+    { stage: 0, gender: "female", facing: "right", moving: true, label: "girl · baby" },
+    { stage: 3, gender: "male", facing: "left", moving: true, label: "boy · child" },
+    { stage: 4, gender: "male", facing: "front", moving: false, label: "boy · middle" },
+    { stage: 5, gender: "female", facing: "right", moving: true, label: "girl · high" },
+    { stage: 6, gender: "female", facing: "front", moving: false, label: "woman · university" },
+    { stage: 7, gender: "male", facing: "left", moving: true, label: "man · career" },
+    { stage: 9, gender: "male", facing: "back", moving: false, label: "man · midlife" },
+    { stage: 10, gender: "female", facing: "front", moving: false, label: "woman · elder" },
   ];
 
   heritages.forEach((heritage, row) => {
     const footY = 255 + row * 225;
     lane(footY, heritage.label);
     cases.forEach((entry, column) => {
-      const x = 130 + column * 265;
+      const x = 105 + column * 198;
       drawCharacter(ctx, x, footY, avatarLook(entry.stage, entry.gender, heritage.id), column * 0.85, {
         moving: entry.moving,
         facing: entry.facing,

@@ -649,6 +649,8 @@ function drawBabyBackHeadShape(ctx: CanvasRenderingContext2D, hcx: number, hcy: 
 // ===========================================================================
 
 export interface AvatarLook {
+  /** Exact v5 life-stage profile used to select generated storybook art. */
+  lifeStageIndex: number;
   heightPx: number;
   headRatio: number;
   chub: number;
@@ -843,6 +845,7 @@ export function avatarLook(stageIndex: number, gender: Gender = "male", heritage
   const pantsSet = heritage === "western" ? ["#2d4f9c", "#243d68", "#33405a"] : palette.pants;
   return {
     ...p,
+    lifeStageIndex: i,
     skin: palette.skin,
     hair,
     hairTexture: palette.texture,
@@ -859,12 +862,26 @@ export function avatarLook(stageIndex: number, gender: Gender = "male", heritage
   };
 }
 
-const PERSON_PROFILE: Record<"newborn" | "toddler" | "child" | "teen" | "adult" | "elder", number> = {
+const PERSON_PROFILE: Record<
+  | "newborn"
+  | "toddler"
+  | "child"
+  | "earlyTeen"
+  | "teen"
+  | "youngAdult"
+  | "adult"
+  | "middleAge"
+  | "elder",
+  number
+> = {
   newborn: 0,
   toddler: 1,
   child: 2,
+  earlyTeen: 4,
   teen: 5,
+  youngAdult: 6,
   adult: 7,
+  middleAge: 9,
   elder: 11,
 };
 
@@ -885,9 +902,9 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
     smokerFriend: { g: "male", age: "teen", hair: "#6a4327", shirt: "#8aa7c9" },
     gangster: { g: "male", age: "teen", hair: "#2f241d", shirt: "#6f62d8" },
     playboy: { g: "male", age: "teen", hair: "#7a421f", shirt: "#ff6f9f" },
-    roommate: { g: "male", age: "teen", hair: "#2a2a1e", shirt: "#dd865a" },
+    roommate: { g: "male", age: "youngAdult", hair: "#2a2a1e", shirt: "#dd865a" },
     coworker: { g: "female", age: "adult", hair: "#3a2a1e", shirt: "#54b3a6" },
-    boss: { g: "male", age: "adult", hair: "#2a2a2a", shirt: "#4a5562" },
+    boss: { g: "male", age: "middleAge", hair: "#2a2a2a", shirt: "#4a5562" },
     gymBuddy: { g: "male", age: "adult", hair: "#2a2018", shirt: "#ff6b6b" },
     spouse: { g: opp, age: "adult", hair: opp === "female" ? "#6a4327" : "#3a2a1e", shirt: opp === "female" ? "#ff9ec0" : "#5f93cf" },
     baby: { g: playerGender, age: "newborn", hair: "#824d22", shirt: "#78baff" },
@@ -904,9 +921,20 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
       if (stageIndex === 0) profileIndex = 2;
       else if (stageIndex === 1) profileIndex = 0;
       else if (stageIndex === 2) profileIndex = 1;
-      else if (stageIndex <= 4) profileIndex = 3;
+      else if (stageIndex <= 3) profileIndex = 3;
+      else if (stageIndex === 4) profileIndex = 4;
+      else if (stageIndex === 5) profileIndex = 5;
+      else if (stageIndex === 6) profileIndex = 6;
+      else if (stageIndex <= 8) profileIndex = 7;
+      else if (stageIndex === 9) profileIndex = 9;
+      else profileIndex = 10;
     }
-    if (kind === "spouse") profileIndex = stageIndex >= 10 ? 10 : 7;
+    if (kind === "mother" || kind === "father") {
+      profileIndex = stageIndex >= 9 ? 10 : stageIndex >= 6 ? 9 : 7;
+    }
+    if (kind === "spouse") {
+      profileIndex = stageIndex >= 10 ? 10 : stageIndex >= 9 ? 9 : 7;
+    }
     if (kind === "child") profileIndex = stageIndex >= 9 ? 3 : 2;
     if (kind === "grandkid") profileIndex = stageIndex >= 11 ? 2 : 1;
     if ((kind === "smokerFriend" || kind === "gangster" || kind === "playboy") && stageIndex >= 6) profileIndex = 6;
@@ -930,6 +958,7 @@ export function personLook(kind: PersonKind, playerGender: Gender, stageIndex?: 
   const pantsSet = heritage === "western" ? ["#33405a", "#243d68", "#2d4f9c"] : palette.pants;
   return {
     ...p,
+    lifeStageIndex: profileIndex,
     skin: palette.skin,
     hair: ageAwareHair,
     hairTexture: palette.texture,

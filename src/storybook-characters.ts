@@ -4,12 +4,23 @@ import type {
   CuteFacing,
 } from "./cute-characters";
 import groundAnchorManifest from "./assets/characters/character-anchors.json";
+import expansionGroundAnchorManifest from "./assets/characters/character-stage-expansion-anchors.json";
 import type { Gender, HeritageStyle } from "./types";
 
-export type StorybookAgeBand = "baby" | "child" | "teen" | "adult" | "elder";
+export type StorybookAgeBand =
+  | "baby"
+  | "child"
+  | "earlyTeen"
+  | "teen"
+  | "youngAdult"
+  | "adult"
+  | "middleAge"
+  | "elder";
+export type StorybookAtlasFamily = "base" | "expansion";
 
 export interface StorybookFrame {
   atlasKey: `${HeritageStyle}-${Gender}`;
+  atlasFamily: StorybookAtlasFamily;
   ageBand: StorybookAgeBand;
   row: number;
   column: number;
@@ -29,6 +40,8 @@ interface StorybookAnchorManifest {
 
 const STORYBOOK_ANCHORS =
   groundAnchorManifest as unknown as StorybookAnchorManifest;
+const EXPANSION_STORYBOOK_ANCHORS =
+  expansionGroundAnchorManifest as unknown as StorybookAnchorManifest;
 const CELL_SIZE = STORYBOOK_ANCHORS.cellSize;
 const STORYBOOK_VISUAL_SCALE = 1.15;
 
@@ -42,15 +55,21 @@ const FACING_COLUMN: Record<CuteFacing, number> = {
   right: 3,
 };
 
-const AGE_ROW: Record<StorybookAgeBand, number> = {
-  baby: 0,
-  child: 1,
-  teen: 2,
-  adult: 3,
-  elder: 4,
+const AGE_FRAME: Record<
+  StorybookAgeBand,
+  { atlasFamily: StorybookAtlasFamily; row: number }
+> = {
+  baby: { atlasFamily: "base", row: 0 },
+  child: { atlasFamily: "base", row: 1 },
+  earlyTeen: { atlasFamily: "expansion", row: 0 },
+  teen: { atlasFamily: "base", row: 2 },
+  youngAdult: { atlasFamily: "expansion", row: 1 },
+  adult: { atlasFamily: "base", row: 3 },
+  middleAge: { atlasFamily: "expansion", row: 2 },
+  elder: { atlasFamily: "base", row: 4 },
 };
 
-const ATLAS_URLS: Record<HeritageStyle, Record<Gender, string>> = {
+const BASE_ATLAS_URLS: Record<HeritageStyle, Record<Gender, string>> = {
   western: {
     male: new URL(
       "./assets/characters/character-atlas-western-male.png",
@@ -93,6 +112,60 @@ const ATLAS_URLS: Record<HeritageStyle, Record<Gender, string>> = {
   },
 };
 
+const EXPANSION_ATLAS_URLS: Record<
+  HeritageStyle,
+  Record<Gender, string>
+> = {
+  western: {
+    male: new URL(
+      "./assets/characters/character-stage-expansion-western-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-stage-expansion-western-female.png",
+      import.meta.url
+    ).href,
+  },
+  asian: {
+    male: new URL(
+      "./assets/characters/character-stage-expansion-asian-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-stage-expansion-asian-female.png",
+      import.meta.url
+    ).href,
+  },
+  middleEastern: {
+    male: new URL(
+      "./assets/characters/character-stage-expansion-middleEastern-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-stage-expansion-middleEastern-female.png",
+      import.meta.url
+    ).href,
+  },
+  black: {
+    male: new URL(
+      "./assets/characters/character-stage-expansion-black-male.png",
+      import.meta.url
+    ).href,
+    female: new URL(
+      "./assets/characters/character-stage-expansion-black-female.png",
+      import.meta.url
+    ).href,
+  },
+};
+
+const ATLAS_URLS: Record<
+  StorybookAtlasFamily,
+  Record<HeritageStyle, Record<Gender, string>>
+> = {
+  base: BASE_ATLAS_URLS,
+  expansion: EXPANSION_ATLAS_URLS,
+};
+
 interface AtlasState {
   image: HTMLImageElement;
   ready: boolean;
@@ -102,13 +175,38 @@ interface AtlasState {
 
 const atlasCache = new Map<string, AtlasState>();
 
+const LIFE_STAGE_AGE_BANDS: readonly StorybookAgeBand[] = [
+  "baby",
+  "child",
+  "child",
+  "child",
+  "earlyTeen",
+  "teen",
+  "youngAdult",
+  "adult",
+  "adult",
+  "middleAge",
+  "elder",
+  "elder",
+];
+
 export function storybookAgeBand(look: CuteCharacterLook): StorybookAgeBand {
+  if (
+    look.lifeStageIndex !== undefined &&
+    Number.isInteger(look.lifeStageIndex)
+  ) {
+    const stage = Math.max(
+      0,
+      Math.min(LIFE_STAGE_AGE_BANDS.length - 1, look.lifeStageIndex)
+    );
+    return LIFE_STAGE_AGE_BANDS[stage];
+  }
   if (look.baby) return "baby";
   if (look.elder) return "elder";
-  if (look.child) return "child";
-  // High school is the final 116 px profile. University and later use the
-  // adult identity so the player does not remain visually adolescent.
+  if (look.child) return look.heightPx >= 106 ? "earlyTeen" : "child";
   if (look.heightPx <= 116) return "teen";
+  if (look.heightPx <= 124) return "youngAdult";
+  if (look.heightPx <= 126) return "middleAge";
   return "adult";
 }
 
@@ -121,10 +219,12 @@ export function storybookFrameForLook(
   facing: CuteFacing
 ): StorybookFrame {
   const ageBand = storybookAgeBand(look);
+  const ageFrame = AGE_FRAME[ageBand];
   return {
     atlasKey: `${look.heritage}-${look.gender}`,
+    atlasFamily: ageFrame.atlasFamily,
     ageBand,
-    row: AGE_ROW[ageBand],
+    row: ageFrame.row,
     column: FACING_COLUMN[facing],
   };
 }
@@ -132,15 +232,23 @@ export function storybookFrameForLook(
 export function storybookGroundAnchorForFrame(
   frame: StorybookFrame
 ): StorybookGroundAnchor | null {
+  const anchors =
+    frame.atlasFamily === "expansion"
+      ? EXPANSION_STORYBOOK_ANCHORS
+      : STORYBOOK_ANCHORS;
   return (
-    STORYBOOK_ANCHORS.atlases[frame.atlasKey]?.[frame.row]?.[frame.column] ??
+    anchors.atlases[frame.atlasKey]?.[frame.row]?.[frame.column] ??
     null
   );
 }
 
-function atlasStateFor(heritage: HeritageStyle, gender: Gender): AtlasState | null {
+function atlasStateFor(
+  atlasFamily: StorybookAtlasFamily,
+  heritage: HeritageStyle,
+  gender: Gender
+): AtlasState | null {
   if (typeof Image === "undefined") return null;
-  const url = ATLAS_URLS[heritage][gender];
+  const url = ATLAS_URLS[atlasFamily][heritage][gender];
   const cached = atlasCache.get(url);
   if (cached) return cached;
 
@@ -178,7 +286,7 @@ function atlasStateFor(heritage: HeritageStyle, gender: Gender): AtlasState | nu
   return state;
 }
 
-/** Begin decoding one heritage pair, or all eight sheets when no filter is set. */
+/** Decode both base and expansion gender pairs for one or every heritage. */
 export async function warmStorybookCharacterAtlases(
   selectedHeritage?: HeritageStyle
 ): Promise<void> {
@@ -186,11 +294,13 @@ export async function warmStorybookCharacterAtlases(
   const loads: Promise<void>[] = [];
   const heritages = selectedHeritage
     ? [selectedHeritage]
-    : (Object.keys(ATLAS_URLS) as HeritageStyle[]);
+    : (Object.keys(BASE_ATLAS_URLS) as HeritageStyle[]);
   for (const heritage of heritages) {
-    for (const gender of ["male", "female"] as const) {
-      const state = atlasStateFor(heritage, gender);
-      if (state) loads.push(state.readyPromise);
+    for (const atlasFamily of ["base", "expansion"] as const) {
+      for (const gender of ["male", "female"] as const) {
+        const state = atlasStateFor(atlasFamily, heritage, gender);
+        if (state) loads.push(state.readyPromise);
+      }
     }
   }
   await Promise.all(loads);
@@ -237,10 +347,13 @@ export function drawStorybookCharacter(
   // the purpose-built procedural seated renderer instead.
   if (motion.pose === "sit") return false;
 
-  const atlas = atlasStateFor(look.heritage, look.gender);
-  if (!atlas || !atlas.ready || atlas.failed) return false;
-
   const frame = storybookFrameForLook(look, motion.facing);
+  const atlas = atlasStateFor(
+    frame.atlasFamily,
+    look.heritage,
+    look.gender
+  );
+  if (!atlas || !atlas.ready || atlas.failed) return false;
   const anchor = storybookGroundAnchorForFrame(frame);
   if (!anchor) return false;
 

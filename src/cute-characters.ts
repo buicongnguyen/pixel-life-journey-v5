@@ -10,6 +10,8 @@ export interface CuteCharacterMotion {
 }
 
 export interface CuteCharacterLook {
+  /** Exact v5 life-stage profile used to select generated storybook art. */
+  lifeStageIndex?: number;
   heightPx: number;
   headRatio: number;
   chub: number;

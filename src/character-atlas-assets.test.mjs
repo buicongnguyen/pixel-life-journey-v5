@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const CELL_SIZE = 256;
 const COLUMNS = 4;
-const ROWS = 5;
+const BASE_ROWS = 5;
+const EXPANSION_ROWS = 3;
 const MIN_VISIBLE_PIXELS_PER_CELL = 1_000;
 const atlasDirectory = fileURLToPath(
   new URL("./assets/characters/", import.meta.url)
@@ -19,6 +20,16 @@ const expectedAtlases = [
   "character-atlas-middleEastern-male.png",
   "character-atlas-western-female.png",
   "character-atlas-western-male.png",
+];
+const expectedExpansionAtlases = [
+  "character-stage-expansion-asian-female.png",
+  "character-stage-expansion-asian-male.png",
+  "character-stage-expansion-black-female.png",
+  "character-stage-expansion-black-male.png",
+  "character-stage-expansion-middleEastern-female.png",
+  "character-stage-expansion-middleEastern-male.png",
+  "character-stage-expansion-western-female.png",
+  "character-stage-expansion-western-male.png",
 ];
 const pngSignature = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -163,11 +174,11 @@ describe("v5 character atlas assets", () => {
       const image = decodeRgbaPng(`${atlasDirectory}/${filename}`);
       expect([image.width, image.height]).toEqual([
         COLUMNS * CELL_SIZE,
-        ROWS * CELL_SIZE,
+        BASE_ROWS * CELL_SIZE,
       ]);
 
       const populatedCells = [];
-      for (let row = 0; row < ROWS; row += 1) {
+      for (let row = 0; row < BASE_ROWS; row += 1) {
         for (let column = 0; column < COLUMNS; column += 1) {
           const visiblePixels = visiblePixelsInCell(image, row, column);
           if (visiblePixels >= MIN_VISIBLE_PIXELS_PER_CELL) {
@@ -175,7 +186,35 @@ describe("v5 character atlas assets", () => {
           }
         }
       }
-      expect(populatedCells).toHaveLength(ROWS * COLUMNS);
+      expect(populatedCells).toHaveLength(BASE_ROWS * COLUMNS);
+    });
+  }
+
+  it("checks in exactly the eight expected stage-expansion atlases", () => {
+    const actualAtlases = readdirSync(atlasDirectory)
+      .filter((name) => /^character-stage-expansion-.*\.png$/.test(name))
+      .sort();
+    expect(actualAtlases).toEqual(expectedExpansionAtlases);
+  });
+
+  for (const filename of expectedExpansionAtlases) {
+    it(`${filename} is a populated 4 x 3 RGBA atlas`, () => {
+      const image = decodeRgbaPng(`${atlasDirectory}/${filename}`);
+      expect([image.width, image.height]).toEqual([
+        COLUMNS * CELL_SIZE,
+        EXPANSION_ROWS * CELL_SIZE,
+      ]);
+
+      const populatedCells = [];
+      for (let row = 0; row < EXPANSION_ROWS; row += 1) {
+        for (let column = 0; column < COLUMNS; column += 1) {
+          const visiblePixels = visiblePixelsInCell(image, row, column);
+          if (visiblePixels >= MIN_VISIBLE_PIXELS_PER_CELL) {
+            populatedCells.push(`${row}:${column}`);
+          }
+        }
+      }
+      expect(populatedCells).toHaveLength(EXPANSION_ROWS * COLUMNS);
     });
   }
 });
