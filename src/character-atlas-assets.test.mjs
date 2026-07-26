@@ -75,6 +75,69 @@ const expectedAlternateAtlases = [
   "character-appearance-alternate-western-female.png",
   "character-appearance-alternate-western-male.png",
 ];
+const frameMetricFamilyPrefixes = {
+  base: "character-atlas-",
+  expansion: "character-stage-expansion-",
+  motionBase: "character-motion-base-",
+  motionExpansion: "character-motion-expansion-",
+  alternate: "character-appearance-alternate-",
+};
+const frameMetricFamilySchema = {
+  base: {
+    rows: ["baby", "child", "teen", "adult", "elder"],
+    columns: 4,
+    directionalColumns: 4,
+  },
+  expansion: {
+    rows: ["earlyTeen", "youngAdult", "middleAge"],
+    columns: 4,
+    directionalColumns: 4,
+  },
+  motionBase: {
+    rows: ["baby", "child", "teen", "adult", "elder"],
+    columns: 5,
+    directionalColumns: 4,
+  },
+  motionExpansion: {
+    rows: ["earlyTeen", "youngAdult", "middleAge"],
+    columns: 5,
+    directionalColumns: 4,
+  },
+  alternate: {
+    rows: [
+      "baby",
+      "child",
+      "earlyTeen",
+      "teen",
+      "youngAdult",
+      "adult",
+      "middleAge",
+      "elder",
+    ],
+    columns: 9,
+    directionalColumns: 8,
+  },
+};
+const headSilhouetteRange = {
+  baby: [0.52, 0.8],
+  child: [0.37, 0.63],
+  earlyTeen: [0.26, 0.48],
+  teen: [0.27, 0.45],
+  youngAdult: [0.22, 0.4],
+  adult: [0.26, 0.42],
+  middleAge: [0.24, 0.41],
+  elder: [0.36, 0.48],
+};
+const headSilhouetteMedianRange = {
+  baby: [0.6, 0.66],
+  child: [0.43, 0.52],
+  earlyTeen: [0.3, 0.37],
+  teen: [0.32, 0.38],
+  youngAdult: [0.31, 0.38],
+  adult: [0.33, 0.38],
+  middleAge: [0.32, 0.37],
+  elder: [0.39, 0.44],
+};
 const alternateAnchorManifest = JSON.parse(
   readFileSync(
     `${atlasDirectory}/character-appearance-alternate-anchors.json`,
@@ -84,6 +147,12 @@ const alternateAnchorManifest = JSON.parse(
 const motionAnchorManifest = JSON.parse(
   readFileSync(
     `${atlasDirectory}/character-motion-anchors.json`,
+    "utf8"
+  )
+);
+const frameMetricsManifest = JSON.parse(
+  readFileSync(
+    `${atlasDirectory}/character-frame-metrics.json`,
     "utf8"
   )
 );
@@ -260,6 +329,73 @@ function visibleBoundsInCell(image, row, column) {
   return maxX < 0
     ? undefined
     : { minX, minY, maxX: maxX + 1, maxY: maxY + 1 };
+}
+
+function metricVisibleHeight(
+  image,
+  row,
+  column,
+  alphaThreshold
+) {
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  let minY = CELL_SIZE;
+  let maxY = -1;
+  for (let y = 0; y < CELL_SIZE; y += 1) {
+    for (let x = 0; x < CELL_SIZE; x += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) * 4 + 3
+        ];
+      if (alpha < alphaThreshold) continue;
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (maxY < 0) throw new Error(`empty metric cell ${row}:${column}`);
+  return maxY - minY + 1;
+}
+
+function frontHeadSilhouetteRatio(image, row, column = 0) {
+  const bounds = visibleBoundsInCell(image, row, column);
+  if (!bounds) {
+    throw new Error(`empty front head cell ${row}:${column}`);
+  }
+  const visibleHeight = bounds.maxY - bounds.minY;
+  const headBottom = Math.min(
+    bounds.maxY,
+    bounds.minY + Math.round(visibleHeight * 0.42)
+  );
+  const spans = [];
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  for (let y = bounds.minY; y < headBottom; y += 1) {
+    let minX = CELL_SIZE;
+    let maxX = -1;
+    for (let x = bounds.minX; x < bounds.maxX; x += 1) {
+      const alpha =
+        image.rgba[
+          ((startY + y) * image.width + startX + x) *
+            4 +
+            3
+        ];
+      if (alpha <= 8) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+    }
+    if (maxX >= 0) spans.push(maxX - minX + 1);
+  }
+  spans.sort((first, second) => first - second);
+  const percentileIndex = Math.floor((spans.length - 1) * 0.95);
+  return spans[percentileIndex] / visibleHeight;
+}
+
+function median(values) {
+  const sorted = [...values].sort((first, second) => first - second);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function recomputeGroundAnchor(image, row, column) {
@@ -781,28 +917,56 @@ describe("v5 character atlas assets", () => {
 
         for (const neutralColumn of [1, 3]) {
           const motionColumn = neutralColumn + 4;
-          const neutralHeadRoot =
-            upperBodyCentroidX(
-              image,
-              row,
-              neutralColumn,
-              0.42
-            ) - recordedAnchors[row][neutralColumn][0];
-          const motionHeadRoot =
-            upperBodyCentroidX(
-              image,
-              row,
-              motionColumn,
-              0.42
-            ) - recordedAnchors[row][motionColumn][0];
-          const renderedDrift =
-            (Math.abs(neutralHeadRoot - motionHeadRoot) *
-              ALTERNATE_RUNTIME_HEIGHTS[row]) /
-            CELL_SIZE;
-          expect(
-            renderedDrift,
-            `${filename} stable side head ${row}:${neutralColumn}`
-          ).toBeLessThanOrEqual(3);
+          const recordedHeights =
+            frameMetricsManifest.families.alternate.atlases[
+              atlasKey
+            ][row];
+          for (const [region, bodyFraction] of [
+            ["torso", 0.82],
+            ["head", 0.42],
+          ]) {
+            const neutralRoot =
+              upperBodyCentroidX(
+                image,
+                row,
+                neutralColumn,
+                bodyFraction
+              ) - recordedAnchors[row][neutralColumn][0];
+            const motionRoot =
+              upperBodyCentroidX(
+                image,
+                row,
+                motionColumn,
+                bodyFraction
+              ) - recordedAnchors[row][motionColumn][0];
+            const neutralScale =
+              frameMetricsManifest.directionalTargetVisibleHeight /
+              recordedHeights[neutralColumn];
+            const motionScale =
+              frameMetricsManifest.directionalTargetVisibleHeight /
+              recordedHeights[motionColumn];
+            const renderedDrift =
+              (Math.abs(
+                neutralRoot * neutralScale -
+                  motionRoot * motionScale
+              ) *
+                ALTERNATE_RUNTIME_HEIGHTS[row]) /
+              CELL_SIZE;
+            const uncorrectedRenderedDrift =
+              (Math.abs(neutralRoot - motionRoot) *
+                ALTERNATE_RUNTIME_HEIGHTS[row]) /
+              CELL_SIZE;
+            expect(
+              renderedDrift - uncorrectedRenderedDrift,
+              `${filename} scale-added side ${region} drift ${row}:${neutralColumn}`
+            ).toBeLessThanOrEqual(1);
+            if (region === "head") {
+              expect(
+                renderedDrift,
+                `${filename} stable rendered side head ${row}:${neutralColumn}`
+              ).toBeLessThanOrEqual(4);
+            }
+          }
         }
       }
       for (let offset = 0; offset < image.rgba.length; offset += 4) {
@@ -855,6 +1019,235 @@ describe("v5 character atlas assets", () => {
       }
     });
   }
+
+  it("records every frame size and normalizes directional stature without distortion", () => {
+    expect(frameMetricsManifest).toMatchObject({
+      version: 1,
+      cellSize: CELL_SIZE,
+      alphaThreshold: 8,
+      directionalTargetVisibleHeight: 246,
+    });
+    expect(Object.keys(frameMetricsManifest.families).sort()).toEqual(
+      Object.keys(frameMetricFamilyPrefixes).sort()
+    );
+
+    let measuredCells = 0;
+    for (const [family, prefix] of Object.entries(
+      frameMetricFamilyPrefixes
+    )) {
+      const metricFamily = frameMetricsManifest.families[family];
+      expect(metricFamily).toBeDefined();
+      expect(metricFamily).toMatchObject(
+        frameMetricFamilySchema[family]
+      );
+      expect(Object.keys(metricFamily.atlases)).toHaveLength(8);
+      for (const [atlasKey, recordedRows] of Object.entries(
+        metricFamily.atlases
+      )) {
+        const image = decodeRgbaPng(
+          `${atlasDirectory}/${prefix}${atlasKey}.png`
+        );
+        expect(recordedRows).toHaveLength(metricFamily.rows.length);
+        for (let row = 0; row < recordedRows.length; row += 1) {
+          expect(recordedRows[row]).toHaveLength(metricFamily.columns);
+          for (
+            let column = 0;
+            column < recordedRows[row].length;
+            column += 1
+          ) {
+            const recordedHeight = recordedRows[row][column];
+            expect(recordedHeight).toBe(
+              metricVisibleHeight(
+                image,
+                row,
+                column,
+                frameMetricsManifest.alphaThreshold
+              )
+            );
+            measuredCells += 1;
+            if (column >= metricFamily.directionalColumns) continue;
+
+            const correction =
+              frameMetricsManifest.directionalTargetVisibleHeight /
+              recordedHeight;
+            expect(correction).toBeGreaterThanOrEqual(1);
+            expect(correction).toBeLessThanOrEqual(1.1);
+            expect(recordedHeight * correction).toBeCloseTo(246, 6);
+            if (metricFamily.rows[row] !== "baby") {
+              expect(recordedHeight).toBe(246);
+            }
+          }
+        }
+      }
+    }
+
+    expect(measuredCells).toBe(1_152);
+  });
+
+  it("keeps neutral front upper silhouettes inside reviewed stage ranges", () => {
+    const cohorts = {
+      classic: Object.fromEntries(
+        Object.keys(headSilhouetteRange).map((ageBand) => [
+          ageBand,
+          [],
+        ])
+      ),
+      alternate: Object.fromEntries(
+        Object.keys(headSilhouetteRange).map((ageBand) => [
+          ageBand,
+          [],
+        ])
+      ),
+    };
+    const recordAtlas = (
+      appearance,
+      filename,
+      ageBands
+    ) => {
+      const image = decodeRgbaPng(`${atlasDirectory}/${filename}`);
+      ageBands.forEach((ageBand, row) => {
+        const ratio = frontHeadSilhouetteRatio(image, row);
+        const [minimum, maximum] = headSilhouetteRange[ageBand];
+        expect(
+          ratio,
+          `${filename} ${ageBand} front head silhouette`
+        ).toBeGreaterThanOrEqual(minimum);
+        expect(
+          ratio,
+          `${filename} ${ageBand} front head silhouette`
+        ).toBeLessThanOrEqual(maximum);
+        cohorts[appearance][ageBand].push(ratio);
+      });
+    };
+
+    for (const filename of expectedAtlases) {
+      recordAtlas("classic", filename, [
+        "baby",
+        "child",
+        "teen",
+        "adult",
+        "elder",
+      ]);
+    }
+    for (const filename of expectedExpansionAtlases) {
+      recordAtlas("classic", filename, [
+        "earlyTeen",
+        "youngAdult",
+        "middleAge",
+      ]);
+    }
+    for (const filename of expectedAlternateAtlases) {
+      recordAtlas("alternate", filename, [
+        "baby",
+        "child",
+        "earlyTeen",
+        "teen",
+        "youngAdult",
+        "adult",
+        "middleAge",
+        "elder",
+      ]);
+    }
+
+    for (const [appearance, ageBands] of Object.entries(cohorts)) {
+      for (const [ageBand, values] of Object.entries(ageBands)) {
+        expect(values).toHaveLength(8);
+        const [minimum, maximum] =
+          headSilhouetteMedianRange[ageBand];
+        expect(
+          median(values),
+          `${appearance} ${ageBand} median head silhouette`
+        ).toBeGreaterThanOrEqual(minimum);
+        expect(
+          median(values),
+          `${appearance} ${ageBand} median head silhouette`
+        ).toBeLessThanOrEqual(maximum);
+      }
+    }
+  });
+
+  it("keeps front-motion upper silhouettes close to their neutral identity", () => {
+    const inspectPair = (
+      label,
+      neutralImage,
+      motionImage,
+      ageBands,
+      motionColumn
+    ) => {
+      ageBands.forEach((ageBand, row) => {
+        const neutralRatio = frontHeadSilhouetteRatio(
+          neutralImage,
+          row
+        );
+        const motionRatio = frontHeadSilhouetteRatio(
+          motionImage,
+          row,
+          motionColumn
+        );
+        const pairRatio = motionRatio / neutralRatio;
+        expect(
+          pairRatio,
+          `${label} ${ageBand} neutral-motion upper-silhouette ratio`
+        ).toBeGreaterThanOrEqual(
+          ageBand === "baby" ? 0.72 : 0.82
+        );
+        expect(
+          pairRatio,
+          `${label} ${ageBand} neutral-motion upper-silhouette ratio`
+        ).toBeLessThanOrEqual(1.2);
+      });
+    };
+
+    for (const filename of expectedAtlases) {
+      inspectPair(
+        filename,
+        decodeRgbaPng(`${atlasDirectory}/${filename}`),
+        decodeRgbaPng(
+          `${atlasDirectory}/${filename.replace(
+            "character-atlas-",
+            "character-motion-base-"
+          )}`
+        ),
+        ["baby", "child", "teen", "adult", "elder"],
+        0
+      );
+    }
+    for (const filename of expectedExpansionAtlases) {
+      inspectPair(
+        filename,
+        decodeRgbaPng(`${atlasDirectory}/${filename}`),
+        decodeRgbaPng(
+          `${atlasDirectory}/${filename.replace(
+            "character-stage-expansion-",
+            "character-motion-expansion-"
+          )}`
+        ),
+        ["earlyTeen", "youngAdult", "middleAge"],
+        0
+      );
+    }
+    for (const filename of expectedAlternateAtlases) {
+      const image = decodeRgbaPng(
+        `${atlasDirectory}/${filename}`
+      );
+      inspectPair(
+        filename,
+        image,
+        image,
+        [
+          "baby",
+          "child",
+          "earlyTeen",
+          "teen",
+          "youngAdult",
+          "adult",
+          "middleAge",
+          "elder",
+        ],
+        4
+      );
+    }
+  });
 
   it("keeps an exhaustive reviewed row-level direction repair contract", () => {
     expect(alternateBuilder).toContain(

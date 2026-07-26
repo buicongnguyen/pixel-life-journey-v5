@@ -7,6 +7,7 @@ import groundAnchorManifest from "./assets/characters/character-anchors.json";
 import expansionGroundAnchorManifest from "./assets/characters/character-stage-expansion-anchors.json";
 import motionGroundAnchorManifest from "./assets/characters/character-motion-anchors.json";
 import alternateGroundAnchorManifest from "./assets/characters/character-appearance-alternate-anchors.json";
+import frameMetricsManifest from "./assets/characters/character-frame-metrics.json";
 import {
   atlasUsesMotionFrame,
   atlasWalkBob,
@@ -43,6 +44,13 @@ export interface StorybookFrame {
 }
 
 export type StorybookGroundAnchor = readonly [x: number, y: number];
+
+export interface StorybookFrameDrawGeometry {
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+}
 
 interface StorybookAnchorManifest {
   version: 1;
@@ -100,6 +108,27 @@ interface StorybookAlternateAnchorManifest {
   >;
 }
 
+interface StorybookFrameMetricFamily {
+  rows: readonly StorybookAgeBand[];
+  columns: number;
+  directionalColumns: number;
+  atlases: Record<
+    StorybookFrame["atlasKey"],
+    readonly (readonly number[])[]
+  >;
+}
+
+interface StorybookFrameMetricsManifest {
+  version: 1;
+  cellSize: number;
+  alphaThreshold: number;
+  directionalTargetVisibleHeight: number;
+  families: Record<
+    StorybookAtlasFamily,
+    StorybookFrameMetricFamily
+  >;
+}
+
 const STORYBOOK_ANCHORS =
   groundAnchorManifest as unknown as StorybookAnchorManifest;
 const EXPANSION_STORYBOOK_ANCHORS =
@@ -108,8 +137,11 @@ const MOTION_STORYBOOK_ANCHORS =
   motionGroundAnchorManifest as unknown as StorybookMotionAnchorManifest;
 const ALTERNATE_STORYBOOK_ANCHORS =
   alternateGroundAnchorManifest as unknown as StorybookAlternateAnchorManifest;
+const STORYBOOK_FRAME_METRICS =
+  frameMetricsManifest as unknown as StorybookFrameMetricsManifest;
 const CELL_SIZE = STORYBOOK_ANCHORS.cellSize;
 const STORYBOOK_VISUAL_SCALE = 1.15;
+const MAX_FRAME_SCALE_CORRECTION = 1.1;
 
 // Runtime atlases are normalized by the build script to the unambiguous order
 // front, screen-left, back, screen-right, regardless of the source sheet's
@@ -551,6 +583,72 @@ export function storybookGroundAnchorForFrame(
   ] ?? null;
 }
 
+function storybookFrameIsSeated(frame: StorybookFrame): boolean {
+  return (
+    ((frame.atlasFamily === "motionBase" ||
+      frame.atlasFamily === "motionExpansion") &&
+      frame.column === 4) ||
+    (frame.atlasFamily === "alternate" && frame.column === 8)
+  );
+}
+
+export function storybookFrameVisibleHeight(
+  frame: StorybookFrame
+): number | null {
+  const family =
+    STORYBOOK_FRAME_METRICS.families[frame.atlasFamily];
+  if (!family || family.rows[frame.row] !== frame.ageBand) {
+    return null;
+  }
+  return (
+    family.atlases[frame.atlasKey]?.[frame.row]?.[
+      frame.column
+    ] ?? null
+  );
+}
+
+/**
+ * Preserve a wide crawl pose's authored aspect ratio while giving every
+ * directional frame the same visible stature. The largest reviewed correction
+ * is 1.079×; the safety cap prevents malformed metadata from exploding a draw.
+ */
+export function storybookFrameScale(
+  frame: StorybookFrame
+): number {
+  if (storybookFrameIsSeated(frame)) return 1;
+  const visibleHeight = storybookFrameVisibleHeight(frame);
+  if (!visibleHeight || visibleHeight <= 0) return 1;
+  const correction =
+    STORYBOOK_FRAME_METRICS.directionalTargetVisibleHeight /
+    visibleHeight;
+  return Number.isFinite(correction) &&
+    correction >= 1 &&
+    correction <= MAX_FRAME_SCALE_CORRECTION
+    ? correction
+    : 1;
+}
+
+/**
+ * Resolve the exact destination rectangle used by the renderer. Keeping this
+ * calculation shared and testable guarantees that size correction is uniform
+ * on both axes and that the reviewed ground anchor remains fixed in the world.
+ */
+export function storybookFrameDrawGeometry(
+  frame: StorybookFrame,
+  visualHeight: number,
+  anchor: StorybookGroundAnchor
+): StorybookFrameDrawGeometry {
+  const destinationSize =
+    visualHeight * storybookFrameScale(frame);
+  const sourceScale = destinationSize / CELL_SIZE;
+  return {
+    width: destinationSize,
+    height: destinationSize,
+    offsetX: -anchor[0] * sourceScale,
+    offsetY: -anchor[1] * sourceScale,
+  };
+}
+
 function atlasStateFor(
   atlasFamily: StorybookAtlasFamily,
   heritage: HeritageStyle,
@@ -778,24 +876,22 @@ export function drawStorybookCharacter(
   const anchor = storybookGroundAnchorForFrame(frame);
   if (!anchor) return false;
 
-  const height = storybookVisualHeight(look);
+  const visualHeight = storybookVisualHeight(look);
+  const geometry = storybookFrameDrawGeometry(
+    frame,
+    visualHeight,
+    anchor
+  );
   // Square normalized cells preserve the reviewed proportions, including the
   // naturally wider crawl and floor-seated silhouettes.
-  const width = height;
-  const seated =
-    ((frame.atlasFamily === "motionBase" ||
-      frame.atlasFamily === "motionExpansion") &&
-      frame.column === 4) ||
-    (frame.atlasFamily === "alternate" && frame.column === 8);
+  const seated = storybookFrameIsSeated(frame);
   const bob = seated
     ? 0
     : motion.moving
-    ? atlasWalkBob(walkPhase, height)
-    : Math.sin(walkPhase * 0.7) * Math.max(0.35, height * 0.004);
-  const scaleX = width / CELL_SIZE;
-  const scaleY = height / CELL_SIZE;
-
-  drawGroundShadow(ctx, cx, footY, height, look.baby);
+    ? atlasWalkBob(walkPhase, visualHeight)
+    : Math.sin(walkPhase * 0.7) *
+      Math.max(0.35, visualHeight * 0.004);
+  drawGroundShadow(ctx, cx, footY, visualHeight, look.baby);
 
   ctx.save();
   ctx.translate(cx, footY - bob);
@@ -809,10 +905,10 @@ export function drawStorybookCharacter(
     frame.row * CELL_SIZE,
     CELL_SIZE,
     CELL_SIZE,
-    -anchor[0] * scaleX,
-    -anchor[1] * scaleY,
-    width,
-    height
+    geometry.offsetX,
+    geometry.offsetY,
+    geometry.width,
+    geometry.height
   );
   ctx.imageSmoothingEnabled = smoothing;
   ctx.imageSmoothingQuality = smoothingQuality;

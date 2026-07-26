@@ -322,8 +322,9 @@ describe("summer character atlas assets", () => {
         expect(stats.bounds.maxX).toBeLessThanOrEqual(251);
         expect(stats.bounds.maxY).toBe(251);
         expect(
-          stats.bounds.maxY - stats.bounds.minY
-        ).toBeGreaterThanOrEqual(240);
+          stats.bounds.maxY - stats.bounds.minY,
+          `${filename} c${column} visible height`
+        ).toBe(246);
 
         const [anchorX, anchorY] = anchors.atlases[key][column];
         expect(anchorX).toBeGreaterThan(40);

@@ -23,6 +23,13 @@ costume, pose, or source image from Sidewalk Iced Tea is included.
   turns. Motion cells use `character-motion-anchors.json`; the four movement
   roots are aligned to the corresponding neutral frame, and seated roots are
   centered on the same world ground line.
+- `character-frame-metrics.json` records the alpha-visible height of every
+  packed frame. The renderer applies a small, uniform whole-frame correction
+  only where a width-limited newborn crawl/profile source is shorter than the
+  common directional target. The correction is capped at 10%, preserves the
+  original head-to-body ratio, and does not alter the shadow, ground anchor, or
+  gameplay footprint. All non-newborn directional frames remain at their
+  authored size.
 - The optional `alternate` appearance uses one unified `2304 × 2048` atlas per
   heritage and gender. Its eight rows are baby through elder; its nine columns
   are four neutral directions, four motion directions, and floor-seated front.
@@ -64,6 +71,12 @@ the flat chroma key and unmistakable detached shadow fragments, normalizes
 scale against the matching neutral age/direction, writes all 320 motion/seated
 anchors, and validates every populated cell. Motion source generations remain
 working material and are also intentionally not shipped.
+
+`scripts/build-character-frame-metrics.py` measures every published classic
+and alternate frame, validates the atlas dimensions and directional height
+contract, then atomically writes the runtime metrics manifest. Run it whenever
+an atlas is rebuilt so neutral and motion frames stay the same visible size at
+every life stage.
 
 `scripts/build-character-appearance-alternate.py` preflights the complete set
 of 32 gender-separated alternate authoring sheets, normalizes neutral and

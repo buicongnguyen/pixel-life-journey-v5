@@ -290,6 +290,37 @@ function upperBodyCentroidX(image, row, column) {
   return weightedX / totalWeight;
 }
 
+function frontUpperSilhouetteRatio(image, row, column) {
+  const { bounds } = inspectCell(image, row, column);
+  const startX = column * CELL_SIZE;
+  const startY = row * CELL_SIZE;
+  const visibleHeight = bounds.bottom - bounds.top;
+  const sampleBottom = Math.min(
+    bounds.bottom,
+    bounds.top + Math.round(visibleHeight * 0.42)
+  );
+  const spans = [];
+  for (let y = bounds.top; y < sampleBottom; y += 1) {
+    let left = CELL_SIZE;
+    let right = -1;
+    for (let x = bounds.left; x < bounds.right; x += 1) {
+      if (
+        pixel(image, startX + x, startY + y)[3] <= 8
+      ) {
+        continue;
+      }
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+    }
+    if (right >= 0) spans.push(right - left + 1);
+  }
+  spans.sort((first, second) => first - second);
+  return (
+    spans[Math.floor((spans.length - 1) * 0.95)] /
+    visibleHeight
+  );
+}
+
 describe("career outfit atlas manifest", () => {
   it("records the exact schema, packs, identities, seasons, and columns", () => {
     expect(Object.keys(manifest).sort()).toEqual(
@@ -413,6 +444,10 @@ describe("career outfit atlas pixels and anchors", () => {
           expect(stats.bounds.top).toBeGreaterThanOrEqual(5);
           expect(stats.bounds.right).toBeLessThanOrEqual(251);
           expect(stats.bounds.bottom).toBeLessThanOrEqual(252);
+          expect(
+            stats.bounds.bottom - stats.bounds.top,
+            `${label} visible height`
+          ).toBe(246);
 
           const anchor = anchorRows[row][column];
           expect(anchor).toHaveLength(2);
@@ -466,4 +501,67 @@ describe("career outfit seasonal artwork", () => {
       }
     }
   }
+});
+
+describe("career outfit motion proportions", () => {
+  it("keeps front-step upper silhouettes close to their neutral identity", () => {
+    for (const { key, pack, file } of expectedAtlases) {
+      const image = decodeRgbaPng(`${directory}/${file}`);
+      for (
+        let row = 0;
+        row < PACKS[pack].length;
+        row += 1
+      ) {
+        const neutral = frontUpperSilhouetteRatio(
+          image,
+          row,
+          0
+        );
+        const motion = frontUpperSilhouetteRatio(
+          image,
+          row,
+          4
+        );
+        const ratio = motion / neutral;
+        expect(
+          ratio,
+          `${key} ${PACKS[pack][row]} front upper-silhouette ratio`
+        ).toBeGreaterThanOrEqual(0.8);
+        expect(
+          ratio,
+          `${key} ${PACKS[pack][row]} front upper-silhouette ratio`
+        ).toBeLessThanOrEqual(1.15);
+      }
+    }
+  });
+
+  it("keeps the corrected Western female leadership motion identities especially close", () => {
+    const image = decodeRgbaPng(
+      `${directory}/career-outfit-atlas-leadership-standard-western-female.png`
+    );
+    for (
+      let row = 0;
+      row < PACKS.leadership.length;
+      row += 1
+    ) {
+      const neutral = frontUpperSilhouetteRatio(
+        image,
+        row,
+        0
+      );
+      const motion = frontUpperSilhouetteRatio(
+        image,
+        row,
+        4
+      );
+      expect(
+        motion / neutral,
+        `${PACKS.leadership[row]} corrected front upper-silhouette ratio`
+      ).toBeGreaterThanOrEqual(0.9);
+      expect(
+        motion / neutral,
+        `${PACKS.leadership[row]} corrected front upper-silhouette ratio`
+      ).toBeLessThanOrEqual(1.1);
+    }
+  });
 });

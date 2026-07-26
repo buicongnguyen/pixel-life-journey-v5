@@ -244,6 +244,9 @@ export interface Partner {
   title: string;
   /** The partner's own gender (men tend to pass earlier — see spouse mortality). */
   gender: Gender;
+  /** Stable storybook identity used in the picker and every later room. */
+  heritage: HeritageStyle;
+  appearance: CharacterAppearanceId;
   emoji: string;
   blurb: string;
   /** Applied passively at every stage transition after the wedding. */

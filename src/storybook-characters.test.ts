@@ -3,9 +3,13 @@ import { avatarLook, personLook } from "./sprites";
 import {
   storybookAgeBand,
   storybookAnimationFrameForLook,
+  storybookFrameDrawGeometry,
   storybookFrameForLook,
+  storybookFrameScale,
+  storybookFrameVisibleHeight,
   storybookGroundAnchorForFrame,
   storybookUsesMotionFrame,
+  storybookVisualHeight,
   warmStorybookCharacterAtlases,
 } from "./storybook-characters";
 import type { CuteFacing } from "./cute-characters";
@@ -106,6 +110,39 @@ describe("v5 storybook sprite selection", () => {
     expect(
       storybookAgeBand(personLook("father", "female", 9, "black"))
     ).toBe("elder");
+  });
+
+  it("keeps a selected spouse's complete authored identity", () => {
+    const selected = personLook(
+      "spouse",
+      "male",
+      8,
+      "black",
+      "alternate",
+      "male"
+    );
+    expect(selected.gender).toBe("male");
+    expect(selected.heritage).toBe("black");
+    expect(selected.appearance).toBe("alternate");
+
+    expect(
+      personLook(
+        "spouse",
+        "male",
+        8,
+        "asian",
+        "classic"
+      ).gender
+    ).toBe("female");
+    expect(
+      personLook(
+        "spouse",
+        "female",
+        8,
+        "western",
+        "classic"
+      ).gender
+    ).toBe("male");
   });
 
   it("keeps every school and campus peer in the player's life stage", () => {
@@ -319,6 +356,151 @@ describe("v5 storybook sprite selection", () => {
     }
   });
 
+  it("keeps every directional frame at one visible size within its stage", () => {
+    const motionPhase = Math.PI / 2;
+    const expectedRenderedHeights = [
+      79.565625,
+      88.40625,
+      97.246875,
+      106.0875,
+      117.13828125,
+      128.1890625,
+      137.0296875,
+      141.45,
+      141.45,
+      139.23984375,
+      132.609375,
+      128.1890625,
+    ];
+
+    for (let stage = 0; stage < 12; stage += 1) {
+      for (const appearance of ["classic", "alternate"] as const) {
+        for (const gender of genders) {
+          for (const heritage of heritages) {
+            const look = avatarLook(
+              stage,
+              gender,
+              heritage,
+              appearance
+            );
+            for (const facing of facings) {
+              for (const phase of [0, motionPhase]) {
+                const frame = storybookAnimationFrameForLook(
+                  look,
+                  { moving: true, facing, verticalBias: 0 },
+                  phase
+                );
+                const visibleHeight =
+                  storybookFrameVisibleHeight(frame);
+                const scale = storybookFrameScale(frame);
+                expect(visibleHeight).not.toBeNull();
+                expect(scale).toBeGreaterThanOrEqual(1);
+                expect(scale).toBeLessThanOrEqual(1.1);
+                expect((visibleHeight ?? 0) * scale).toBeCloseTo(
+                  246,
+                  6
+                );
+                expect(
+                  (storybookVisualHeight(look) *
+                    (visibleHeight ?? 0) *
+                    scale) /
+                    256
+                ).toBeCloseTo(expectedRenderedHeights[stage], 6);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps alternate newborn left poses at one effective height", () => {
+    for (const heritage of ["asian", "middleEastern"] as const) {
+      const look = avatarLook(
+        0,
+        "male",
+        heritage,
+        "alternate"
+      );
+      const neutral = storybookAnimationFrameForLook(
+        look,
+        { moving: true, facing: "left", verticalBias: 0 },
+        0
+      );
+      const motion = storybookAnimationFrameForLook(
+        look,
+        { moving: true, facing: "left", verticalBias: 0 },
+        Math.PI / 2
+      );
+      const neutralHeight = storybookFrameVisibleHeight(neutral);
+      const motionHeight = storybookFrameVisibleHeight(motion);
+
+      expect(
+        (neutralHeight ?? 0) * storybookFrameScale(neutral)
+      ).toBeCloseTo(246, 6);
+      expect(
+        (motionHeight ?? 0) * storybookFrameScale(motion)
+      ).toBeCloseTo(246, 6);
+    }
+  });
+
+  it("keeps a corrected newborn square and pinned to its reviewed ground anchor", () => {
+    const look = avatarLook(
+      0,
+      "female",
+      "western",
+      "alternate"
+    );
+    const frame = storybookAnimationFrameForLook(
+      look,
+      { moving: true, facing: "front", verticalBias: 0 },
+      0
+    );
+    const anchor = storybookGroundAnchorForFrame(frame);
+    expect(anchor).not.toBeNull();
+    const geometry = storybookFrameDrawGeometry(
+      frame,
+      storybookVisualHeight(look),
+      anchor ?? [0, 0]
+    );
+    const sourceScale = geometry.width / 256;
+
+    expect(storybookFrameScale(frame)).toBeGreaterThan(1);
+    expect(geometry.width).toBe(geometry.height);
+    expect(
+      geometry.offsetX + (anchor?.[0] ?? 0) * sourceScale
+    ).toBeCloseTo(0, 8);
+    expect(
+      geometry.offsetY + (anchor?.[1] ?? 0) * sourceScale
+    ).toBeCloseTo(0, 8);
+    expect(
+      ((storybookFrameVisibleHeight(frame) ?? 0) *
+        geometry.height) /
+        256
+    ).toBeCloseTo(
+      (storybookVisualHeight(look) * 246) / 256,
+      6
+    );
+
+    const adultLook = avatarLook(7, "male", "black");
+    const adultFrame = storybookFrameForLook(
+      adultLook,
+      "right"
+    );
+    const adultAnchor =
+      storybookGroundAnchorForFrame(adultFrame) ?? [0, 0];
+    const adultGeometry = storybookFrameDrawGeometry(
+      adultFrame,
+      storybookVisualHeight(adultLook),
+      adultAnchor
+    );
+    expect(storybookFrameScale(adultFrame)).toBe(1);
+    expect(adultGeometry.width).toBe(
+      storybookVisualHeight(adultLook)
+    );
+    expect(adultGeometry.height).toBe(adultGeometry.width);
+  });
+
   it("uses genuine floor-seated motion art for all 64 character identities", () => {
     const visited = new Set<string>();
     for (const stage of [0, 1, 4, 5, 6, 7, 9, 10]) {
@@ -344,6 +526,7 @@ describe("v5 storybook sprite selection", () => {
           );
           expect(frame.column).toBe(4);
           expect(anchor).not.toBeNull();
+          expect(storybookFrameScale(frame)).toBe(1);
         }
       }
     }
@@ -413,6 +596,7 @@ describe("v5 storybook sprite selection", () => {
             `${seated.atlasFamily}:${seated.atlasKey}:${seated.row}:${seated.column}`
           );
           expect(storybookGroundAnchorForFrame(seated)).not.toBeNull();
+          expect(storybookFrameScale(seated)).toBe(1);
         }
       }
     }
@@ -465,6 +649,7 @@ describe("v5 storybook sprite selection", () => {
           );
           expect(seated.atlasFamily).toBe("alternate");
           expect(seated.column).toBe(8);
+          expect(storybookFrameScale(seated)).toBe(1);
           visited.add(
             `${seated.atlasKey}:${seated.row}:${seated.column}`
           );

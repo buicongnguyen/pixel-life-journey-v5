@@ -918,9 +918,11 @@ export function personLook(
   playerGender: Gender,
   stageIndex?: number,
   heritage: HeritageStyle = "western",
-  appearance: CharacterAppearanceId = "classic"
+  appearance: CharacterAppearanceId = "classic",
+  genderOverride?: Gender
 ): AvatarLook {
   const opp: Gender = playerGender === "female" ? "male" : "female";
+  const spouseGender = genderOverride ?? opp;
   type Spec = { g: Gender; age: keyof typeof PERSON_PROFILE; hair: string; shirt: string };
   const map: Record<PersonKind, Spec> = {
     mother: { g: "female", age: "adult", hair: "#6a4327", shirt: "#ff9ec0" },
@@ -940,7 +942,7 @@ export function personLook(
     coworker: { g: "female", age: "adult", hair: "#3a2a1e", shirt: "#54b3a6" },
     boss: { g: "male", age: "middleAge", hair: "#2a2a2a", shirt: "#4a5562" },
     gymBuddy: { g: "male", age: "adult", hair: "#2a2018", shirt: "#ff6b6b" },
-    spouse: { g: opp, age: "adult", hair: opp === "female" ? "#6a4327" : "#3a2a1e", shirt: opp === "female" ? "#ff9ec0" : "#5f93cf" },
+    spouse: { g: spouseGender, age: "adult", hair: spouseGender === "female" ? "#6a4327" : "#3a2a1e", shirt: spouseGender === "female" ? "#ff9ec0" : "#5f93cf" },
     baby: { g: playerGender, age: "newborn", hair: "#824d22", shirt: "#78baff" },
     child: { g: "male", age: "child", hair: "#824d22", shirt: "#ffd23f" },
     grandkid: { g: "female", age: "child", hair: "#8a5a2e", shirt: "#8fdf6b" },
@@ -3179,6 +3181,8 @@ export interface PersonDrawOptions {
   seated?: boolean;
   appearance?: CharacterAppearanceId;
   expression?: CharacterExpression;
+  /** Preserve a selected spouse's authored gender, including legacy saves. */
+  gender?: Gender;
 }
 
 /** Shared focus ring and readable name plate for generic and uniformed people. */
@@ -3229,7 +3233,8 @@ export function drawPerson(ctx: CanvasRenderingContext2D, cx: number, footY: num
     playerGender,
     stageIndex,
     heritage,
-    options.appearance
+    options.appearance,
+    options.gender
   );
   const seated = !!options.seated;
   ctx.save();

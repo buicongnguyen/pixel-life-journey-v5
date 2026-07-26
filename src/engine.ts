@@ -42,7 +42,12 @@ import {
   weightStatus,
 } from "./stats";
 import { STAGES } from "./stages";
-import { PARTNERS } from "./partners";
+import {
+  PARTNERS,
+  marriageCandidateById,
+  marriageCandidatesForPlayer,
+  spouseGenderForPlayer,
+} from "./partners";
 import { OCCUPATIONS, TIER_LABELS } from "./occupations";
 import { HOUSE_TIERS } from "./houses";
 import { VEHICLES } from "./vehicles";
@@ -79,6 +84,7 @@ import {
 } from "./biography";
 import { avatarLook, drawAvatar, drawCharacterNamePlate, drawEventItem, drawInteractionExpression, drawPerson, drawPet, drawRoom, drawStation, personLook, type AvatarFacing } from "./sprites";
 import {
+  storybookVisualHeight,
   warmStorybookCharacterAtlases,
   warmStorybookPortraits,
   warmStorybookSetupAtlases,
@@ -88,6 +94,7 @@ import {
   drawJobCharacter,
   JOB_UNIFORMS,
   jobArtHeritage,
+  jobCharacterFrame,
   jobUniformHasSummer,
   warmJobCharacterAtlases,
 } from "./job-characters";
@@ -192,8 +199,6 @@ const INVENTORY_MAX_SLOTS = 8;
 const INVENTORY_MAX_COUNT = 9;
 const FOOD_USE_COOLDOWN = 5;
 const FOOD_FRESH = 20; // enough time to understand the tray and choose eat/give
-const PLAYER_CAREER_UNIFORM_SIZE = 142;
-const PLAYER_SUMMER_OUTFIT_SIZE = 142;
 const LIFE_SEASON_DISPLAY: Record<
   LifeSeason,
   { emoji: string; label: string }
@@ -2260,10 +2265,12 @@ export class Game {
       if (ch && ch.moments.length) return ch.moments.map((m) => this.sanitizeMoment(m));
       return []; // an authored life with nothing recorded for this chapter — a quiet time
     }
-    const base = this.withParentCareerDetails(
-      this.withFamilyPresence(
-        s.options.filter((o) => this.optionAvailable(o)),
-        s
+    const base = this.withPartnerDetails(
+      this.withParentCareerDetails(
+        this.withFamilyPresence(
+          s.options.filter((o) => this.optionAvailable(o)),
+          s
+        )
       )
     );
     const reservedProfessionVisuals: ProfessionVisualIdentity[] =
@@ -2362,6 +2369,23 @@ export class Game {
     });
   }
 
+  /** Keep the chosen partner's name and identity visible in every later room. */
+  private withPartnerDetails(
+    options: LifeOption[]
+  ): LifeOption[] {
+    if (!this.partner) return options;
+    return options.map((option) =>
+      option.person === "spouse"
+        ? {
+            ...option,
+            label: this.partner!.name,
+            icon: this.partner!.emoji,
+            desc: `${this.partner!.name}, ${this.partner!.title}. ${option.desc}`,
+          }
+        : option
+    );
+  }
+
   /** Reduce a loaded biography moment to known-safe fields (localStorage is untrusted,
    *  so it can never carry a house/vehicle picker, a gamble, a cost or a one-off flag). */
   private sanitizeMoment(m: LifeOption): LifeOption {
@@ -2454,7 +2478,10 @@ export class Game {
           this.stageIndex,
           station.heritage ?? this.heritage,
           station.appearance ??
-            this.appearanceForNpc(station.opt)
+            this.appearanceForNpc(station.opt),
+          station.opt.person === "spouse"
+            ? this.partner?.gender
+            : undefined
         )
       );
     void warmStorybookPortraits(portraitLooks);
@@ -3542,19 +3569,28 @@ export class Game {
   }
 
   private pickPartner(p: Partner): void {
-    this.partner = p;
+    if (this.mode !== "partner" || this.partner) return;
+    const chosen = marriageCandidateById(
+      this.gender,
+      p.id
+    );
+    if (!chosen) return;
+    this.partner = chosen;
+    // Stations were built before the picker, when spouse-only options were
+    // unavailable. Rebuild now so the chosen spouse enters this chapter.
+    this.buildStations();
     this.applyEff({ happiness: 10, health: 2 }, "mental");
     this.history.push({
       stageId: "marriage",
       stageName: "Marriage & Baby",
-      optionId: "wed_" + p.id,
+      optionId: "wed_" + chosen.id,
       storyTag: undefined,
       ageAt: this.age,
     });
     this.timeline[this.stageIndex] = this.snapshot(); // re-capture: now married
     this.mode = "playing";
     this.clearOverlay();
-    this.hint(`💍 You married ${p.name}, ${p.title}!`);
+    this.hint(`💍 You married ${chosen.name}, ${chosen.title}!`);
     this.persistGame();
   }
 
@@ -4592,6 +4628,8 @@ export class Game {
             facing: this.facing,
             verticalBias: this.verticalBias,
           };
+          const playerCustomBodySize =
+            storybookVisualHeight(playerLook);
           let drewCustomBody = false;
           if (careerUniform) {
             drewCustomBody = drawJobCharacter(
@@ -4602,7 +4640,7 @@ export class Game {
               careerUniform.heritage,
               careerUniform.gender,
               {
-                size: PLAYER_CAREER_UNIFORM_SIZE,
+                size: playerCustomBodySize,
                 facing: this.facing,
                 moving: this.moving,
                 phase: this.walkPhase,
@@ -4622,7 +4660,7 @@ export class Game {
               this.heritage,
               this.gender,
               {
-                size: PLAYER_SUMMER_OUTFIT_SIZE,
+                size: playerCustomBodySize,
                 facing: this.facing,
                 moving: this.moving,
                 phase: this.walkPhase,
@@ -4693,6 +4731,25 @@ export class Game {
                 careerUniform
               ))
           ) {
+            const professionSeason = jobArtSeasonFor(
+              profession.uniform,
+              lifeSeason
+            );
+            const professionFrame = jobCharacterFrame(
+              profession.uniform,
+              profession.heritage,
+              profession.gender,
+              { season: professionSeason }
+            );
+            const professionStageIndex =
+              professionFrame?.ageBand === "middleAge" ? 9 : 7;
+            const professionBodySize = storybookVisualHeight(
+              avatarLook(
+                professionStageIndex,
+                profession.gender,
+                profession.heritage
+              )
+            );
             ctx.save();
             if (used) ctx.globalAlpha = 0.5;
             drewProfession = drawJobCharacter(
@@ -4703,13 +4760,10 @@ export class Game {
               profession.heritage,
               profession.gender,
               {
-                size: 142,
+                size: professionBodySize,
                 facing: "front",
                 moving: false,
-                season: jobArtSeasonFor(
-                  profession.uniform,
-                  lifeSeason
-                ),
+                season: professionSeason,
               }
             );
             ctx.restore();
@@ -4718,7 +4772,7 @@ export class Game {
                 ctx,
                 st.x,
                 st.y,
-                140,
+                professionBodySize,
                 st.opt.label,
                 focused,
                 used,
@@ -4743,6 +4797,10 @@ export class Game {
               seated: this.shouldSitWithNewborn(st),
               appearance:
                 st.appearance ?? this.appearanceForNpc(st.opt),
+              gender:
+                st.opt.person === "spouse"
+                  ? this.partner?.gender
+                  : undefined,
               expression:
                 activeReaction?.target === st
                   ? activeReaction.expressions.npc
@@ -6605,6 +6663,9 @@ export class Game {
 
   /** Assign one full identity per NPC and keep it stable for the whole life. */
   private appearanceForNpc(opt: LifeOption): CharacterAppearanceId {
+    if (opt.person === "spouse" && this.partner) {
+      return this.partner.appearance;
+    }
     if (opt.person && isSameStagePeerKind(opt.person)) {
       return peerVisualIdentity(
         this.lifeSeed,
@@ -6629,6 +6690,9 @@ export class Game {
 
   /** School and campus peers can differ in heritage without changing age. */
   private heritageForNpc(opt: LifeOption): HeritageStyle {
+    if (opt.person === "spouse" && this.partner) {
+      return this.partner.heritage;
+    }
     if (!opt.person || !isSameStagePeerKind(opt.person)) {
       return this.heritage;
     }
@@ -7022,8 +7086,18 @@ export class Game {
   }
 
   private showPartner(): void {
+    const candidates =
+      marriageCandidatesForPlayer(this.gender);
+    const spouseGender =
+      spouseGenderForPlayer(this.gender);
+    const playerNoun =
+      this.gender === "male" ? "man" : "woman";
+    const peopleNoun =
+      spouseGender === "female" ? "women" : "men";
+    const spouseNoun =
+      spouseGender === "female" ? "wives" : "husbands";
     const mk = (text: string, color: string) => `<span class="plj-chip" style="color:${color}">${text}</span>`;
-    const cards = PARTNERS.map((p) => {
+    const cards = candidates.map((p) => {
       const reason = this.partnerLockReason(p);
       const locked = !!reason;
       const money = p.moneyMod
@@ -7031,27 +7105,170 @@ export class Game {
         : "";
       const chips = locked ? mk(`🔒 ${reason}`, "#ff8a8a") : effectChips(p.modifiers) + money;
       return `
-      <button class="plj-partner${locked ? " locked" : ""}" data-id="${p.id}" ${locked ? "disabled" : ""}>
-        <span class="plj-partner-face">${p.emoji}</span>
-        <span class="plj-partner-name">${p.name}</span>
-        <span class="plj-partner-title">${p.title}</span>
-        <span class="plj-partner-blurb">${p.blurb}</span>
+      <button class="plj-partner plj-wedding-candidate${locked ? " locked" : ""}" data-id="${esc(p.id)}" aria-label="Meet ${esc(p.name)}, ${esc(p.title)}" ${locked ? "disabled" : ""}>
+        <span class="plj-partner-avatar-wrap">
+          <canvas class="plj-partner-avatar" width="144" height="168" data-partner-id="${esc(p.id)}" role="img" aria-label="${esc(p.name)}, ${spouseGender === "female" ? "woman" : "man"}"></canvas>
+          <span class="plj-partner-job" aria-hidden="true">${p.emoji}</span>
+        </span>
+        <span class="plj-partner-name">${esc(p.name)}</span>
+        <span class="plj-partner-gender">${spouseGender === "female" ? "Woman" : "Man"} · ${esc(p.title)}</span>
+        <span class="plj-partner-blurb">${esc(p.blurb)}</span>
         <span class="plj-chips">${chips}</span>
       </button>`;
     }).join("");
     this.ui.overlay.innerHTML = `
-      <div class="plj-card plj-partners-card">
-        <h2>💍 Time to settle down</h2>
-        <p class="plj-sub">Choose who to share your life with. Everyone is available; each relationship brings a different rhythm to the chapters ahead.</p>
-        <div class="plj-partners">${cards}</div>
+      <div class="plj-card plj-partners-card plj-wedding-card">
+        <div class="plj-wedding-kicker">SHORT STAGE · WEDDING INTERLUDE</div>
+        <h2>💞 Meet your future spouse</h2>
+        <div class="plj-wedding-progress" aria-label="Wedding interlude progress">
+          <span class="active">1 · Meet</span>
+          <span>2 · Choose</span>
+          <span>3 · Married life</span>
+        </div>
+        <p class="plj-sub">You are a ${playerNoun}, so this stage introduces ${candidates.length} ${peopleNoun} as possible ${spouseNoun}. Everyone is available; choose one person to know better.</p>
+        <div class="plj-partners plj-wedding-grid">${cards}</div>
       </div>`;
     this.ui.overlay.classList.add("show");
-    this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-partner:not(.locked)").forEach((btn) => {
+    this.ui.overlay.querySelectorAll<HTMLButtonElement>(".plj-wedding-candidate:not(.locked)").forEach((btn) => {
       btn.onclick = () => {
-        const p = PARTNERS.find((x) => x.id === btn.dataset.id);
-        if (p) this.pickPartner(p);
+        const p = marriageCandidateById(
+          this.gender,
+          btn.dataset.id ?? ""
+        );
+        if (p) this.showPartnerMeet(p);
       };
     });
+    this.preparePartnerFaces();
+  }
+
+  /** Draw the exact storybook identity that will later appear in the room. */
+  private partnerPortraitLook(
+    partner: Partner
+  ): ReturnType<typeof personLook> {
+    return personLook(
+      "spouse",
+      this.gender,
+      this.stageIndex,
+      partner.heritage,
+      partner.appearance,
+      partner.gender
+    );
+  }
+
+  private renderPartnerFaces(): void {
+    this.ui.overlay
+      .querySelectorAll<HTMLCanvasElement>(
+        "canvas[data-partner-id]"
+      )
+      .forEach((canvas) => {
+        const partner = PARTNERS.find(
+          (candidate) =>
+            candidate.id === canvas.dataset.partnerId
+        );
+        if (!partner) return;
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        context.clearRect(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        drawAvatar(
+          context,
+          canvas.width / 2,
+          canvas.height - 5,
+          this.partnerPortraitLook(partner),
+          0,
+          {
+            moving: false,
+            facing: "front",
+            verticalBias: 0,
+          }
+        );
+      });
+  }
+
+  private preparePartnerFaces(): void {
+    this.renderPartnerFaces();
+    const partners = Array.from(
+      this.ui.overlay.querySelectorAll<HTMLCanvasElement>(
+        "canvas[data-partner-id]"
+      )
+    ).flatMap((canvas) => {
+      const partner = PARTNERS.find(
+        (candidate) =>
+          candidate.id === canvas.dataset.partnerId
+      );
+      return partner ? [partner] : [];
+    });
+    void warmStorybookPortraits(
+      partners.map((partner) =>
+        this.partnerPortraitLook(partner)
+      )
+    ).then(() => {
+      if (this.mode === "partner") {
+        this.renderPartnerFaces();
+      }
+    });
+  }
+
+  /** Step two keeps the decision intentional and lets the player go back. */
+  private showPartnerMeet(p: Partner): void {
+    const partner = marriageCandidateById(
+      this.gender,
+      p.id
+    );
+    if (!partner) {
+      this.showPartner();
+      return;
+    }
+    const mk = (text: string, color: string) => `<span class="plj-chip" style="color:${color}">${text}</span>`;
+    const money = partner.moneyMod
+      ? mk(
+          `${partner.moneyMod > 0 ? "+" : "−"}${formatMoney(Math.abs(partner.moneyMod))}/yr`,
+          partner.moneyMod > 0 ? "#3ddc84" : "#ff8a8a"
+        )
+      : "";
+    const genderLabel =
+      partner.gender === "female" ? "Woman" : "Man";
+    this.ui.overlay.innerHTML = `
+      <div class="plj-card plj-wedding-card plj-wedding-meet-card">
+        <div class="plj-wedding-kicker">SHORT STAGE · WEDDING INTERLUDE</div>
+        <h2>💗 Get to know ${esc(partner.name)}</h2>
+        <div class="plj-wedding-progress" aria-label="Wedding interlude progress">
+          <span>1 · Meet</span>
+          <span class="active">2 · Choose</span>
+          <span>3 · Married life</span>
+        </div>
+        <div class="plj-wedding-meet">
+          <span class="plj-partner-avatar-wrap plj-partner-avatar-wrap-large">
+            <canvas class="plj-partner-avatar" width="144" height="168" data-partner-id="${esc(partner.id)}" role="img" aria-label="${esc(partner.name)}, ${genderLabel.toLowerCase()}"></canvas>
+            <span class="plj-partner-job" aria-hidden="true">${partner.emoji}</span>
+          </span>
+          <div>
+            <h3>${esc(partner.name)} · ${esc(partner.title)}</h3>
+            <p class="plj-partner-gender">${genderLabel}</p>
+            <p>${esc(partner.blurb)}</p>
+            <span class="plj-chips">${effectChips(partner.modifiers)}${money}</span>
+          </div>
+        </div>
+        <p class="plj-wedding-note">This choice becomes your spouse for the chapters ahead.</p>
+        <div class="plj-wedding-actions">
+          <button class="plj-btn" id="plj-partner-confirm">Marry ${esc(partner.name)}</button>
+          <button class="plj-btn plj-btn-ghost" id="plj-partner-back">Meet someone else</button>
+        </div>
+      </div>`;
+    this.ui.overlay.classList.add("show");
+    this.ui.overlay.querySelector<HTMLButtonElement>(
+      "#plj-partner-confirm"
+    )!.onclick = () => this.pickPartner(partner);
+    this.ui.overlay.querySelector<HTMLButtonElement>(
+      "#plj-partner-back"
+    )!.onclick = () => this.showPartner();
+    this.preparePartnerFaces();
   }
 
   private showCommute(): void {

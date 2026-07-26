@@ -358,6 +358,10 @@ describe("occupation character atlas assets", () => {
         expect(stats.bounds.minY).toBeGreaterThanOrEqual(5);
         expect(stats.bounds.maxX).toBeLessThanOrEqual(251);
         expect(stats.bounds.maxY).toBeLessThanOrEqual(252);
+        expect(
+          stats.bounds.maxY - stats.bounds.minY,
+          `${filename} c${column} visible height`
+        ).toBe(246);
         const [anchorX, anchorY] = anchors.atlases[key][column];
         expect(anchorX).toBeGreaterThan(40);
         expect(anchorX).toBeLessThan(216);
