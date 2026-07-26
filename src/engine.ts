@@ -84,13 +84,6 @@ import { createUI, type UIRefs } from "./ui";
 import { generateStory, type CauseOfEnd, type LifeStory } from "./story";
 import { linePool } from "./messages";
 import { ECONOMIC_BACKGROUNDS, LIFE_SPEEDS, backgroundMoney, chapterAgeStep, partnerLifeAge } from "./v5-rules";
-import {
-  ROOM_LANDSCAPE,
-  ROOM_PORTRAIT,
-  effectiveFamilyZoneShare,
-  roomZoneGeometry,
-  type RoomDimensions,
-} from "./background-layout";
 
 // Room dimensions are NOT fixed: they switch between a tall portrait shape and a
 // wide-short landscape shape (setRoomDims) so the playfield fills the screen in
@@ -108,10 +101,10 @@ const ASSETS_GATE_R = 21;
 const TRAINING_GATE_R = 21;
 const UTILITY_GATE_GAP = 54;
 const SPEED = 205; // base move speed (scaled up by your IQ — smart = nimble)
-// Raw rear inset; the shared room geometry adds the protected scenery band
-// before returning the first legal player/social foot row.
-let PY_MIN = 142;
+let PY_MIN = 142; // feet stay on ground while the sky remains scenic only
 let PY_MAX = 982;
+let SOCIAL_Y_MIN = PY_MIN + 48;
+let FAMILY_Y_MAX = PY_MAX - 24;
 
 // Supersample to the display's pixel density — 1 on a standard screen, 2 on
 // retina/mobile. SS=2 everywhere drew 4× the pixels a 1× display can even show,
@@ -119,14 +112,20 @@ let PY_MAX = 982;
 const SS = Math.min(2, Math.max(1, Math.ceil((typeof window !== "undefined" && window.devicePixelRatio) || 1)));
 /** Depth comparator for the render draw-list — reused so it isn't reallocated each frame. */
 const byDepth = (a: { y: number }, b: { y: number }): number => a.y - b.y;
-function setRoomDims(r: RoomDimensions): void {
+const ROOM_PORTRAIT = { W: 640, H: 1000, FLOOR_Y: 72, PY_MIN: 142, PY_MAX: 982 };
+const ROOM_LANDSCAPE = { W: 1180, H: 560, FLOOR_Y: 52, PY_MIN: 116, PY_MAX: 544 };
+function setRoomDims(r: { W: number; H: number; FLOOR_Y: number; PY_MIN: number; PY_MAX: number }): void {
   W = r.W;
   H = r.H;
   FLOOR_Y = r.FLOOR_Y;
   PY_MIN = r.PY_MIN;
   PY_MAX = r.PY_MAX;
   DOOR_X = W - 74;
+  SOCIAL_Y_MIN = PY_MIN + 48;
+  FAMILY_Y_MAX = PY_MAX - 24;
 }
+const ZONE_GATE_GAP = 48;
+const MIN_ZONE_HEIGHT = 118;
 // --- moving-items mechanic ---
 const GOOD_SPEED = 24; // common good items drift AWAY; touch them to collect
 const BAD_SPEED = 34; // bad items drift TOWARD you (auto-applied on contact)
@@ -1552,7 +1551,7 @@ export class Game {
     if (!initial) {
       // re-fit the in-progress game to the new room shape
       this.px = Math.max(48, Math.min(W - 36, this.px));
-      this.py = Math.max(this.playerMinY(), Math.min(PY_MAX, this.py));
+      this.py = Math.max(PY_MIN, Math.min(PY_MAX, this.py));
       if (this.mode === "playing") this.buildStations();
       this.placePetInRoom(this.petX, this.petY);
     }
@@ -2266,39 +2265,35 @@ export class Game {
   }
 
   private familyZoneShare(): number {
-    return effectiveFamilyZoneShare(
-      { W, H, FLOOR_Y, PY_MIN, PY_MAX },
-      STAGES[this.stageIndex]?.id
-    );
+    const id = STAGES[this.stageIndex]?.id;
+    if (id === "newborn" || id === "toddler" || id === "early") return 0.64;
+    if (id === "elementary" || id === "middle" || id === "high") return 0.54;
+    if (id === "university" || id === "career") return 0.34;
+    if (id === "marriage" || id === "midlife") return 0.42;
+    if (id === "senior" || id === "retirement") return 0.5;
+    return 0.5;
   }
 
   private zoneSplitY(): number {
-    return roomZoneGeometry(
-      { W, H, FLOOR_Y, PY_MIN, PY_MAX },
-      STAGES[this.stageIndex]?.id
-    ).splitY;
+    const playable = FAMILY_Y_MAX - SOCIAL_Y_MIN;
+    return Math.round(FAMILY_Y_MAX - playable * this.familyZoneShare());
   }
 
   private upperScene(): UpperSceneKind {
     const scenes = STAGES[this.stageIndex]?.upperScenes ?? ["park"];
-    return scenes[0] ?? "park";
+    if (scenes.length <= 1) return scenes[0] ?? "park";
+    return scenes[Math.floor(this.renderTime / 12) % scenes.length];
   }
 
   private zoneBounds(zone: StationZone): { min: number; max: number } {
-    const geometry = roomZoneGeometry(
-      { W, H, FLOOR_Y, PY_MIN, PY_MAX },
-      STAGES[this.stageIndex]?.id
-    );
-    return zone === "social" ? geometry.social : geometry.family;
-  }
-
-  /**
-   * The scenery's rear band is decorative only. Keep the player's feet on the
-   * same social floor used by people, gates, and hazards so they cannot walk on
-   * sky, water, railings, or rear-wall furniture.
-   */
-  private playerMinY(): number {
-    return this.zoneBounds("social").min;
+    const splitY = this.zoneSplitY();
+    if (zone === "social") {
+      return { min: SOCIAL_Y_MIN, max: Math.max(SOCIAL_Y_MIN + MIN_ZONE_HEIGHT, splitY - ZONE_GATE_GAP) };
+    }
+    return {
+      min: Math.min(FAMILY_Y_MAX - MIN_ZONE_HEIGHT, splitY + ZONE_GATE_GAP),
+      max: FAMILY_Y_MAX,
+    };
   }
 
   private petFacingToward(
@@ -3613,7 +3608,7 @@ export class Game {
       this.px += dx * sp * dt; // dx/dy carry the analog magnitude → variable speed
       this.py += dy * sp * dt;
       this.px = Math.max(48, Math.min(W - 36, this.px));
-      this.py = Math.max(this.playerMinY(), Math.min(PY_MAX, this.py));
+      this.py = Math.max(PY_MIN, Math.min(PY_MAX, this.py));
       this.walkPhase += dt * 10 * Math.min(1, mag * 1.5);
     } else {
       this.verticalBias = 0;

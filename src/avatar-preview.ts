@@ -2,7 +2,6 @@ import {
   avatarLook,
   drawCharacter,
   drawPerson,
-  drawRoom,
   personLook,
 } from "./sprites";
 import type { AvatarFacing } from "./sprites";
@@ -24,21 +23,11 @@ import type {
   HeritageStyle,
   JobUniform,
   PersonKind,
-  Stage,
-  UpperSceneKind,
 } from "./types";
 import {
   PERSON_REACTION_SECONDS,
   interactionExpressionsAt,
 } from "./character-interactions";
-import { STAGES } from "./stages";
-import {
-  ROOM_LANDSCAPE,
-  ROOM_PORTRAIT,
-  familyFloorY,
-  roomZoneGeometry,
-  type RoomDimensions,
-} from "./background-layout";
 
 const maybeCanvas = document.getElementById("preview");
 if (!(maybeCanvas instanceof HTMLCanvasElement)) {
@@ -54,7 +43,7 @@ if (!maybeCtx) {
 const ctx = maybeCtx;
 const width = 1600;
 const height = 1000;
-const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+const dpr = window.devicePixelRatio || 1;
 
 canvas.width = width * dpr;
 canvas.height = height * dpr;
@@ -809,260 +798,6 @@ function renderInteractions(now: number): void {
   });
 }
 
-function requestedBackgroundStage(): Stage {
-  const requestedStage = searchParams.get("stage");
-  const exactStage = STAGES.find(
-    (stage) => stage.id === requestedStage
-  );
-  if (exactStage) return exactStage;
-
-  // Keep the original `scene=` links useful as aliases, but make `stage=`
-  // authoritative because several life stages intentionally share a scene.
-  const requestedScene = searchParams.get("scene");
-  return (
-    STAGES.find(
-      (stage) =>
-        stage.id === requestedScene ||
-        (stage.scene === requestedScene &&
-          (requestedScene !== "school" ||
-            stage.id === "elementary"))
-    ) ?? STAGES[0]
-  );
-}
-
-function requestedUpperScene(stage: Stage): UpperSceneKind {
-  const requested = searchParams.get("upper") as
-    | UpperSceneKind
-    | null;
-  if (requested && stage.upperScenes?.includes(requested)) {
-    return requested;
-  }
-  return stage.upperScenes?.[0] ?? "park";
-}
-
-function drawBackgroundReviewCard(
-  stage: Stage,
-  room: RoomDimensions,
-  x: number,
-  y: number,
-  scale: number,
-  title: string,
-  now: number
-): void {
-  const geometry = roomZoneGeometry(room, stage.id);
-  const stageIndex = Math.max(0, STAGES.indexOf(stage));
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  ctx.beginPath();
-  ctx.rect(0, 0, room.W, room.H);
-  ctx.clip();
-  drawRoom(
-    ctx,
-    stage.theme,
-    room.W,
-    room.H,
-    room.FLOOR_Y,
-    false,
-    now / 1000,
-    {
-      scene: stage.scene,
-      upperScene: requestedUpperScene(stage),
-      atHome: !!stage.atHome,
-      homeQuality: stage.atHome ? 3 : 0,
-      splitY: geometry.splitY,
-      ownedVehicles: [],
-      ownedHome: null,
-    }
-  );
-
-  const socialY =
-    geometry.social.min +
-    (geometry.social.max - geometry.social.min) * 0.56;
-  const familyY =
-    geometry.family.min +
-    Math.min(74, (geometry.family.max - geometry.family.min) * 0.26);
-  drawCharacter(
-    ctx,
-    room.W * 0.34,
-    socialY,
-    avatarLook(stageIndex, "male", "western", requestedAppearance),
-    now / 500,
-    { moving: false, facing: "front", verticalBias: 0 }
-  );
-  drawCharacter(
-    ctx,
-    room.W * 0.58,
-    familyY,
-    avatarLook(stageIndex, "female", "asian", requestedAppearance),
-    now / 500,
-    { moving: false, facing: "front", verticalBias: 0 }
-  );
-  const companionKind: PersonKind =
-    stageIndex <= 2
-      ? "mother"
-      : stageIndex >= 10
-        ? "oldFriend"
-        : "bestFriend";
-  const companionY =
-    geometry.family.min +
-    (geometry.family.max - geometry.family.min) * 0.7;
-  drawPerson(
-    ctx,
-    room.W * 0.78,
-    companionY,
-    companionKind,
-    stageIndex <= 2 ? "female" : "male",
-    stageIndex <= 2
-      ? "Parent"
-      : stageIndex >= 10
-        ? "Old friend"
-        : "Friend",
-    false,
-    false,
-    now / 1000,
-    stageIndex,
-    stageIndex % 2 === 0 ? "western" : "black",
-    { appearance: requestedAppearance }
-  );
-
-  if (searchParams.has("guides")) {
-    ctx.save();
-    ctx.setLineDash([10, 7]);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255,255,255,0.86)";
-    ctx.beginPath();
-    ctx.moveTo(0, familyFloorY(geometry.splitY));
-    ctx.lineTo(room.W, familyFloorY(geometry.splitY));
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(49,87,103,0.88)";
-    ctx.beginPath();
-    ctx.moveTo(0, geometry.family.min);
-    ctx.lineTo(room.W, geometry.family.min);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.restore();
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.72)";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(
-    x - 2,
-    y - 2,
-    room.W * scale + 4,
-    room.H * scale + 4
-  );
-  ctx.fillStyle = "#f8fbff";
-  ctx.font = "bold 22px Arial";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "bottom";
-  ctx.fillText(title, x, y - 12);
-  ctx.restore();
-}
-
-function renderBackgrounds(now: number): void {
-  const stage = requestedBackgroundStage();
-  ctx.fillStyle = "#26384a";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#f4d9cb";
-  ctx.fillRect(0, 0, width, 92);
-  ctx.fillStyle = "#4f3d3a";
-  ctx.font = "bold 30px Arial";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    `Background review: ${stage.emoji} ${stage.name}`,
-    36,
-    34
-  );
-  ctx.font = "17px Arial";
-  ctx.fillText(
-    "Flat storybook playmats · rear/edge props · visible floor before every legal foot anchor",
-    36,
-    68
-  );
-
-  drawBackgroundReviewCard(
-    stage,
-    ROOM_PORTRAIT,
-    54,
-    136,
-    0.78,
-    "Portrait 640 × 1000",
-    now
-  );
-  drawBackgroundReviewCard(
-    stage,
-    ROOM_LANDSCAPE,
-    584,
-    186,
-    0.8,
-    "Landscape 1180 × 560",
-    now
-  );
-
-  ctx.fillStyle = "rgba(15,25,35,0.78)";
-  ctx.fillRect(584, 670, 944, 172);
-  ctx.fillStyle = "#f8fbff";
-  ctx.font = "bold 20px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText("Review checks", 612, 704);
-  ctx.font = "17px Arial";
-  ctx.fillText(
-    "• Characters stay strongest in contrast and saturation",
-    612,
-    738
-  );
-  ctx.fillText(
-    "• Rugs and texture are flat decals; raised props stay at the rear or clipped edges",
-    612,
-    770
-  );
-  ctx.fillText(
-    "• Add &guides to compare the painted floor line with the first legal foot line",
-    612,
-    802
-  );
-}
-
-function startBackgroundPreview(): void {
-  const minimumFrameInterval = 1000 / 15;
-  let animationFrame = 0;
-  let lastRender = Number.NEGATIVE_INFINITY;
-
-  const animate = (now: number): void => {
-    animationFrame = 0;
-    if (document.hidden) return;
-
-    if (now - lastRender >= minimumFrameInterval) {
-      renderBackgrounds(now);
-      lastRender = now;
-    }
-    animationFrame = window.requestAnimationFrame(animate);
-  };
-
-  const start = (): void => {
-    if (!document.hidden && animationFrame === 0) {
-      animationFrame = window.requestAnimationFrame(animate);
-    }
-  };
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      if (animationFrame !== 0) {
-        window.cancelAnimationFrame(animationFrame);
-        animationFrame = 0;
-      }
-      return;
-    }
-    lastRender = Number.NEGATIVE_INFINITY;
-    start();
-  });
-
-  start();
-}
-
 function render(): void {
   if (location.search.includes("variants")) {
     renderVariants();
@@ -1097,9 +832,7 @@ function render(): void {
   drawMovementRow(895);
 }
 
-if (searchParams.has("backgrounds")) {
-  startBackgroundPreview();
-} else if (location.search.includes("interactions")) {
+if (location.search.includes("interactions")) {
   const animate = (now: number): void => {
     renderInteractions(now);
     window.requestAnimationFrame(animate);

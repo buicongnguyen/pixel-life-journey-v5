@@ -25,9 +25,6 @@ import {
   type CharacterExpression,
   type NpcRoleCue,
 } from "./character-interactions";
-import {
-  familyFloorY,
-} from "./background-layout";
 
 // ---------------------------------------------------------------------------
 // All drawing. The canvas is supersampled (see ui.ts) and rendered smoothly, so
@@ -3291,32 +3288,8 @@ export function drawRoom(ctx: CanvasRenderingContext2D, theme: RoomTheme, W: num
       decor.homeQuality
     );
   }
-  drawRoomLighting(ctx, W, H);
   drawZoneDivider(ctx, W, splitY);
   drawDoor(ctx, theme, W, H, splitY, doorActive, t);
-}
-
-function drawRoomLighting(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  H: number
-): void {
-  ctx.save();
-  const sideShade = ctx.createLinearGradient(0, 0, W, 0);
-  sideShade.addColorStop(0, "rgba(74,52,43,0.10)");
-  sideShade.addColorStop(0.12, "rgba(74,52,43,0)");
-  sideShade.addColorStop(0.88, "rgba(74,52,43,0)");
-  sideShade.addColorStop(1, "rgba(74,52,43,0.10)");
-  ctx.fillStyle = sideShade;
-  ctx.fillRect(0, 0, W, H);
-
-  const paperGlow = ctx.createLinearGradient(0, 0, 0, H);
-  paperGlow.addColorStop(0, "rgba(255,249,232,0.08)");
-  paperGlow.addColorStop(0.62, "rgba(255,249,232,0)");
-  paperGlow.addColorStop(1, "rgba(71,48,40,0.05)");
-  ctx.fillStyle = paperGlow;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
 }
 
 function drawOwnedVehicles(ctx: CanvasRenderingContext2D, W: number, splitY: number, vehicles: Pick<VehicleTier, "id" | "name">[], t: number): void {
@@ -3394,31 +3367,19 @@ function strokeCircle(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: 
 
 function drawOwnedHomeExterior(ctx: CanvasRenderingContext2D, W: number, splitY: number, home: Pick<HouseTier, "id" | "name" | "quality"> | null): void {
   if (!home) return;
-  // A home is shown as a small framed wall picture. It ends before the family
-  // floor starts, so the avatar can never appear to stand on the building.
-  const x = 20;
-  const y = splitY + 7;
-  const w = Math.min(122, W * 0.22);
-  const h = 24;
-  roundedBackdrop(ctx, x, y, w, h, 5, "#d8edf0");
-  px(ctx, x + 4, y + h - 8, w - 8, 5, "#9fc28f");
-  px(ctx, x + 4, y + h - 3, w - 8, 2, "#7fa874");
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x + 3, y + 2, w - 6, h - 4);
-  ctx.clip();
-  ctx.translate(x + w * 0.29, y + 2);
-  ctx.scale(0.36, 0.36);
-  if (home.id === "studio" || home.id === "condo") {
-    drawApartmentExterior(ctx, 0, 0, home.quality);
-  } else {
-    drawHouseExterior(ctx, 0, 0, home.quality, home.id === "villa");
-  }
-  ctx.restore();
-
-  ellipse(ctx, x + w - 18, y + h - 8, 10, 6, "#7fad75");
-  ellipse(ctx, x + w - 11, y + h - 10, 7, 6, "#96c888");
+  const x = 22;
+  const y = splitY + 15;
+  const w = 126;
+  const h = 58;
+  px(ctx, x - 4, y - 4, w + 8, h + 8, "rgba(36,26,32,0.24)");
+  px(ctx, x, y, w, h, "#bfeaff");
+  px(ctx, x, y + h - 20, w, 20, "#7fcf74");
+  px(ctx, x, y + h - 2, w, 2, "#5c9b55");
+  if (home.id === "studio" || home.id === "condo") drawApartmentExterior(ctx, x + 20, y + 6, home.quality);
+  else drawHouseExterior(ctx, x + 18, y + 8, home.quality, home.id === "villa");
+  px(ctx, x + w - 34, y + h - 24, 20, 8, "#6ba85e");
+  ellipse(ctx, x + w - 24, y + h - 31, 13, 12, "#4bb366");
+  ellipse(ctx, x + w - 12, y + h - 29, 10, 9, "#62c87a");
 }
 
 function drawApartmentExterior(ctx: CanvasRenderingContext2D, x: number, y: number, quality: number): void {
@@ -3542,9 +3503,6 @@ function drawFlowerPatch(ctx: CanvasRenderingContext2D, x: number, y: number, co
 
 function drawSocialArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number, scene: UpperSceneKind): void {
   switch (scene) {
-    case "nurseryGarden":
-      drawNurseryGardenArea(ctx, W, top, bottom, t);
-      return;
     case "amusementPark":
       drawAmusementParkArea(ctx, W, top, bottom, t);
       return;
@@ -3584,77 +3542,6 @@ function drawSocialArea(ctx: CanvasRenderingContext2D, W: number, top: number, b
   }
 }
 
-function drawNurseryGardenArea(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  top: number,
-  bottom: number,
-  t: number
-): void {
-  // Keep every raised garden detail above the first legal social foot row.
-  // The lawn then reads as one continuous, flat play surface.
-  const rearGround = Math.round(
-    Math.min(top + 70, bottom - 126)
-  );
-  const sky = ctx.createLinearGradient(0, top, 0, rearGround);
-  sky.addColorStop(0, "#dcebec");
-  sky.addColorStop(1, "#f8eee3");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, top, W, rearGround - top);
-
-  const cloudShift = (t * 4) % 190;
-  for (const [x0, y, s] of [
-    [84, top + 25, 0.64],
-    [330, top + 18, 0.52],
-  ] as const) {
-    const x = ((x0 + cloudShift) % (W + 120)) - 60;
-    ellipse(ctx, x, y, 22 * s, 7 * s, "rgba(255,255,255,0.72)");
-    ellipse(
-      ctx,
-      x + 18 * s,
-      y + 3 * s,
-      25 * s,
-      8 * s,
-      "rgba(255,255,255,0.68)"
-    );
-  }
-  ellipse(ctx, W - 72, top + 24, 15, 15, "#efd486");
-
-  const lawn = ctx.createLinearGradient(0, rearGround, 0, bottom);
-  lawn.addColorStop(0, "#d7e5cf");
-  lawn.addColorStop(1, "#aac9aa");
-  ctx.fillStyle = lawn;
-  ctx.fillRect(0, rearGround, W, bottom - rearGround);
-
-  // A low rear fence and clipped foliage sit before the actor lane. Everything
-  // in the live center is a flat lawn or playmat.
-  px(ctx, 0, rearGround + 7, W, 5, "#c79b72");
-  px(ctx, 0, rearGround + 24, W, 4, "#b98563");
-  for (let x = 18; x < W; x += 42) {
-    px(ctx, x, rearGround + 2, 5, 28, "#c79b72");
-  }
-  for (const x of [-12, W - 34]) {
-    ellipse(ctx, x + 20, rearGround + 19, 31, 22, "#8fb58e");
-    ellipse(ctx, x + 35, rearGround + 10, 24, 18, "#a7c49b");
-  }
-
-  const matY = rearGround + (bottom - rearGround) * 0.55;
-  drawFlatRug(
-    ctx,
-    W * 0.5,
-    matY,
-    Math.min(160, W * 0.25),
-    Math.min(42, (bottom - rearGround) * 0.105),
-    "#d97b75",
-    "#f4cdbb"
-  );
-  ctx.save();
-  ctx.globalAlpha = 0.32;
-  drawFlowerPatch(ctx, 74, rearGround + 8, 5);
-  drawFlowerPatch(ctx, W - 150, rearGround + 12, 5);
-  ctx.restore();
-}
-
 function drawOutdoorParkArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number): void {
   const horizon = Math.round(Math.min(top + 48, bottom - 122));
   const sky = ctx.createLinearGradient(0, top, 0, horizon);
@@ -3683,27 +3570,25 @@ function drawOutdoorParkArea(ctx: CanvasRenderingContext2D, W: number, top: numb
   for (let x = 24; x < W; x += 76) {
     drawPixelTree(ctx, x + 5, horizon + 25 + (x % 3) * 5, 0.72, x);
   }
-  drawFlowerPatch(ctx, 226, horizon + 30, 7);
-  drawFlowerPatch(ctx, W - 314, horizon + 40, 6);
+  drawFlowerPatch(ctx, 226, horizon + 56, 7);
+  drawFlowerPatch(ctx, W - 314, horizon + 76, 6);
 
   if (bottom - horizon > 170) {
-    // Water and raised play equipment stay in the non-walkable rear band.
-    const rearBase = Math.min(bottom - 18, top + 108);
-    const pondX = -56;
-    const pondY = top + 68;
+    const pondX = 106;
+    const pondY = Math.round(horizon + (bottom - horizon) * 0.46);
     ellipse(ctx, pondX, pondY, 86, 28, "#6ec8e8");
     ellipse(ctx, pondX - 16, pondY - 4, 54, 12, "rgba(255,255,255,0.28)");
     px(ctx, pondX - 92, pondY + 22, 178, 5, "#4d9c65");
     for (let x = pondX - 72; x < pondX + 82; x += 28) px(ctx, x, pondY + 18, 14, 7, "#7cc46b");
 
-    const swingX = W - 92;
-    const swingY = rearBase - 72;
-    px(ctx, swingX, swingY, 5, 72, "#7a5a44");
-    px(ctx, swingX + 72, swingY, 5, 72, "#7a5a44");
+    const swingX = W - 166;
+    const swingY = Math.round(horizon + (bottom - horizon) * 0.28);
+    px(ctx, swingX, swingY, 5, 80, "#7a5a44");
+    px(ctx, swingX + 72, swingY, 5, 80, "#7a5a44");
     px(ctx, swingX - 10, swingY, 96, 5, "#7a5a44");
-    px(ctx, swingX + 27, swingY + 5, 3, 47, "#3f5168");
-    px(ctx, swingX + 49, swingY + 5, 3, 47, "#3f5168");
-    px(ctx, swingX + 24, swingY + 51, 32, 7, "#d8a85d");
+    px(ctx, swingX + 27, swingY + 5, 3, 54, "#3f5168");
+    px(ctx, swingX + 49, swingY + 5, 3, 54, "#3f5168");
+    px(ctx, swingX + 24, swingY + 58, 32, 7, "#f2b24c");
   }
 
   for (let x = 18; x < W; x += 38) {
@@ -3746,28 +3631,13 @@ function drawAmusementParkArea(ctx: CanvasRenderingContext2D, W: number, top: nu
   ctx.fillRect(0, horizon, W, bottom - horizon);
   px(ctx, 0, horizon - 3, W, 8, "#8ed17f");
 
-  // Shadows are part of the ride footprint, so leave enough rear clearance
-  // for the carousel's full ellipse rather than only its nominal ground point.
-  const rearBase = Math.min(bottom - 18, top + 90);
-  drawPixelTree(ctx, 30, rearBase, 0.58, 4);
-  drawPixelTree(ctx, W - 30, rearBase, 0.54, 5);
-  const wheelR = Math.min(
-    42,
-    Math.max(30, (rearBase - top) * 0.34)
-  );
-  drawFerrisWheel(ctx, 142, rearBase - wheelR, wheelR, t);
-  drawCarousel(ctx, W - 138, rearBase, t);
-  drawTicketBooth(ctx, Math.round(W * 0.51), rearBase);
-  drawFlowerPatch(ctx, 250, rearBase - 5, 5);
-  drawBalloonStand(ctx, W - 42, rearBase - 48, t);
-
-  // The live center remains a flat fairground path.
-  ctx.save();
-  ctx.globalAlpha = 0.16;
-  for (let x = 22; x < W; x += 88) {
-    px(ctx, x, rearBase + 42 + (x % 3) * 18, 28, 3, "#fff7dd");
-  }
-  ctx.restore();
+  drawPixelTree(ctx, 42, horizon + 48, 0.68, 4);
+  drawPixelTree(ctx, W - 42, horizon + 54, 0.62, 5);
+  drawFerrisWheel(ctx, 154, Math.min(bottom - 78, horizon + 102), Math.min(54, Math.max(38, (bottom - horizon) * 0.21)), t);
+  drawCarousel(ctx, W - 166, Math.min(bottom - 46, horizon + 130), t);
+  drawTicketBooth(ctx, Math.round(W * 0.48), Math.min(bottom - 48, horizon + 136));
+  drawFlowerPatch(ctx, 260, Math.min(bottom - 52, horizon + 118), 6);
+  drawBalloonStand(ctx, W - 62, Math.min(bottom - 78, horizon + 96), t);
 }
 
 function drawFerrisWheel(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, t: number): void {
@@ -3892,17 +3762,11 @@ function drawMountainArea(ctx: CanvasRenderingContext2D, W: number, top: number,
   ctx.fillStyle = ground;
   ctx.fillRect(0, horizon, W, bottom - horizon);
   px(ctx, 0, horizon - 2, W, 5, "#b9e6a0");
-  // Raised trees and flowers stay clipped to the rear corners. The center is a
-  // calm meadow playmat, so feet never appear on a trunk or flower row.
-  const rearBase = Math.min(bottom - 24, top + 94);
-  drawPixelTree(ctx, 22, rearBase, 0.64, 2);
-  drawPixelTree(ctx, W - 22, rearBase, 0.58, 3);
-  drawFlowerPatch(ctx, 72, Math.min(rearBase - 10, horizon + 12), 5);
-  // A small wooden cabin is clipped to the rear edge and grounded before the
-  // actor lane starts.
-  const cabinGround = Math.min(bottom - 18, top + 96);
-  const cx0 = W - 112;
-  const cy0 = cabinGround - 40;
+  for (let x = 30; x < W; x += 92) drawPixelTree(ctx, x, horizon + 30 + (x % 3) * 7, 0.8, x);
+  drawFlowerPatch(ctx, 90, horizon + 62, 5);
+  // a small wooden cabin
+  const cx0 = W - 158;
+  const cy0 = horizon + 44;
   px(ctx, cx0, cy0, 74, 40, "#8a6a4a");
   px(ctx, cx0 + 8, cy0 + 14, 16, 26, "#5d4530");
   px(ctx, cx0 + 44, cy0 + 12, 18, 14, "#cfe8f2");
@@ -3931,12 +3795,7 @@ function drawMountainArea(ctx: CanvasRenderingContext2D, W: number, top: number,
 function drawBeachArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number): void {
   // bands scale with the area height — the sea must survive short zones
   const seaTop = Math.round(top + Math.max(20, Math.min(42, (bottom - top) * 0.16)));
-  const sandTop = Math.round(
-    Math.min(
-      bottom - 96,
-      Math.max(seaTop + 24, top + 82)
-    )
-  ); // enough dry sand is visible before the first legal foot row
+  const sandTop = Math.round(Math.max(seaTop + 30, top + Math.min(110, (bottom - top) * 0.5))); // sand starts before the walkable band — nobody stands on water
   const sky = ctx.createLinearGradient(0, top, 0, seaTop);
   sky.addColorStop(0, "#7fd4f2");
   sky.addColorStop(1, "#eafaff");
@@ -3986,9 +3845,8 @@ function drawBeachArea(ctx: CanvasRenderingContext2D, W: number, top: number, bo
     px(ctx, x, sandTop + foamShift, 26, 4, "rgba(255,255,255,0.75)");
   }
   // beach umbrella + ball + starfish
-  const rearBase = Math.min(bottom - 18, top + 92);
-  const ux = 24;
-  const uy = rearBase - 26;
+  const ux = 96;
+  const uy = sandTop + 34;
   px(ctx, ux - 2, uy - 26, 4, 52, "#8a6a4a");
   ctx.fillStyle = "#ff6f7d";
   ctx.beginPath();
@@ -4003,8 +3861,8 @@ function drawBeachArea(ctx: CanvasRenderingContext2D, W: number, top: number, bo
     ctx.closePath();
     ctx.fill();
   }
-  ellipse(ctx, ux + 46, rearBase - 8, 11, 11, "#ffd23f");
-  ellipse(ctx, ux + 42, rearBase - 11, 5, 5, "#ff6f7d");
+  ellipse(ctx, ux + 52, uy + 20, 11, 11, "#ffd23f");
+  ellipse(ctx, ux + 48, uy + 17, 5, 5, "#ff6f7d");
   ellipse(ctx, W - 120, bottom - 26, 7, 7, "#ff9a62");
   // gulls
   ctx.strokeStyle = "rgba(70,90,110,0.65)";
@@ -4026,10 +3884,8 @@ function drawShipDeckArea(ctx: CanvasRenderingContext2D, W: number, top: number,
   // fills the entire playable area so people walk on planks, never on water.
   const h = bottom - top;
   const horizon = Math.round(top + Math.max(18, Math.min(34, h * 0.14)));
-  const railY = Math.round(
-    top + Math.max(54, Math.min(70, h * 0.18))
-  );
-  const deckTop = railY + 26;
+  const railY = Math.round(top + Math.max(76, Math.min(106, h * 0.24)));
+  const deckTop = railY + 12;
   const sky = ctx.createLinearGradient(0, top, 0, horizon);
   sky.addColorStop(0, "#8ed2f5");
   sky.addColorStop(1, "#e8f8ff");
@@ -4123,13 +3979,12 @@ function drawFlowerFieldArea(ctx: CanvasRenderingContext2D, W: number, top: numb
   ctx.fillRect(0, horizon, W, bottom - horizon);
   ellipse(ctx, W * 0.25, horizon + 6, W * 0.3, 14, "#c4eda2");
   ellipse(ctx, W * 0.75, horizon + 10, W * 0.32, 16, "#aede8f");
-  // A dense rear ribbon keeps the flower-field identity without filling the
-  // walk lane with raised stems. Scattered marks below are flat petal decals.
+  // ranks upon ranks of tulips in alternating colours
   const colors = ["#ff6f9f", "#ffd23f", "#b98cff", "#ff8c5a", "#ff5d6c", "#fff2f5"];
-  const rearFlowerLimit = Math.min(bottom - 24, top + 96);
-  for (let r = 0; r < 2; r++) {
-    const fy = horizon + 18 + r * 22;
-    if (fy + 10 > rearFlowerLimit) break;
+  const rows = Math.max(3, Math.floor((bottom - horizon - 40) / 34));
+  for (let r = 0; r < rows; r++) {
+    const fy = horizon + 30 + r * 34;
+    if (fy > bottom - 12) break;
     const sway = Math.sin(t * 1.4 + r) * 2;
     for (let x = 14 + (r % 2) * 13; x < W; x += 26) {
       const c = colors[(r + Math.floor(x / 26)) % colors.length];
@@ -4138,21 +3993,6 @@ function drawFlowerFieldArea(ctx: CanvasRenderingContext2D, W: number, top: numb
       ellipse(ctx, x + 1 + sway, fy - 5, 2.2, 2.6, "rgba(255,255,255,0.35)");
     }
   }
-  ctx.save();
-  ctx.globalAlpha = 0.24;
-  for (let y = top + 126, row = 0; y < bottom - 18; y += 42, row++) {
-    for (let x = 24 + (row % 2) * 34; x < W; x += 94) {
-      ellipse(
-        ctx,
-        x,
-        y,
-        3.2,
-        1.5,
-        colors[(row + Math.floor(x / 94)) % colors.length]
-      );
-    }
-  }
-  ctx.restore();
   // butterflies
   for (let i = 0; i < 3; i++) {
     const bx = W * 0.2 + ((t * 22 + i * 170) % (W * 0.7));
@@ -4166,96 +4006,61 @@ function drawFlowerFieldArea(ctx: CanvasRenderingContext2D, W: number, top: numb
 }
 
 function drawSchoolIndoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, campus: boolean): void {
-  const wallBottom = Math.round(
-    top + Math.min(100, Math.max(72, (bottom - top) * 0.28))
-  );
-  const wallTop = campus ? "#e6e4d7" : "#dcebec";
-  const wallBottomCol = campus ? "#cbd8c0" : "#bfd6d9";
-  const floorTop = campus ? "#d9cba4" : "#d7b28a";
-  const floorBottom = campus ? "#b9b98f" : "#c59470";
+  const wallBottom = Math.round(top + Math.min(126, Math.max(88, (bottom - top) * 0.36)));
+  const wallTop = campus ? "#c7ecbd" : "#b9e8ff";
+  const wallBottomCol = campus ? "#91d584" : "#87cfff";
+  const floorTop = campus ? "#d7c487" : "#dba96c";
+  const floorBottom = campus ? "#9ec98b" : "#b98552";
   const wall = ctx.createLinearGradient(0, top, 0, wallBottom);
   wall.addColorStop(0, wallTop);
   wall.addColorStop(1, wallBottomCol);
   ctx.fillStyle = wall;
   ctx.fillRect(0, top, W, wallBottom - top);
-  px(ctx, 0, top + 12, W, 5, "rgba(255,255,255,0.32)");
+  drawPixelTrim(ctx, 0, top + 14, W, 8, tint(wallTop, 16), shade(wallBottomCol, 8));
   const floor = ctx.createLinearGradient(0, wallBottom, 0, bottom);
   floor.addColorStop(0, floorTop);
   floor.addColorStop(1, floorBottom);
   ctx.fillStyle = floor;
   ctx.fillRect(0, wallBottom, W, bottom - wallBottom);
-  px(ctx, 0, wallBottom - 4, W, 4, "#9d8873");
-  px(ctx, 0, wallBottom, W, 3, "rgba(255,255,255,0.32)");
-  ctx.save();
-  ctx.globalAlpha = 0.12;
-  for (let row = 0, y = wallBottom + 24; y < bottom; row++, y += 46) {
-    for (let x = 20 + (row % 2) * 34; x < W; x += 104) {
-      px(ctx, x, y, 16, 2, "#fff9e8");
-      px(ctx, x + 39, y + 17, 9, 2, "#7b6554");
-    }
-  }
-  ctx.restore();
-
-  const rugY = wallBottom + (bottom - wallBottom) * 0.57;
-  drawFlatRug(
-    ctx,
-    W * 0.54,
-    rugY,
-    Math.min(178, W * 0.24),
-    Math.min(34, (bottom - wallBottom) * 0.085),
-    campus ? "#80718f" : "#6f8f9b",
-    campus ? "#b7a9c1" : "#a9c5ca"
-  );
+  for (let y = wallBottom + 24; y < bottom; y += 46) px(ctx, 0, y, W, 2, "rgba(255,255,255,0.22)");
+  for (let x = 24; x < W; x += 58) px(ctx, x, wallBottom, 2, bottom - wallBottom, "rgba(90,70,42,0.16)");
 
   if (campus) {
-    roundedBackdrop(ctx, 46, top + 20, 152, 46, 6, "#7c6a8a");
-    roundedBackdrop(
-      ctx,
-      54,
-      top + 27,
-      136,
-      32,
-      4,
-      "#eee3bd",
-      "rgba(98,77,67,0.22)"
-    );
+    px(ctx, 46, top + 18, 152, 62, "#6f4896");
+    px(ctx, 54, top + 26, 136, 46, "#f2e4ae");
     ctx.fillStyle = "#6f4896";
-    ctx.font = "11px 'Trebuchet MS', sans-serif";
+    ctx.font = "13px 'Trebuchet MS', sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("LECTURE HALL", 122, top + 47);
+    ctx.fillText("LECTURE", 122, top + 46);
+    ctx.fillText("HALL", 122, top + 64);
     for (let x = W - 210; x < W - 38; x += 24) {
-      roundedBackdrop(
-        ctx,
-        x,
-        wallBottom - 48,
-        17,
-        42,
-        3,
-        "#746287"
-      );
-      px(ctx, x + 4, wallBottom - 42, 9, 28, "#dcc879");
+      px(ctx, x, wallBottom - 58, 16, 50, "#6a4b8a");
+      px(ctx, x + 3, wallBottom - 52, 10, 36, "#f6d66d");
+    }
+    for (let x = 80; x < W - 92; x += 126) {
+      px(ctx, x, bottom - 70, 76, 18, "#7d6547");
+      px(ctx, x + 12, bottom - 52, 6, 28, "#5a4734");
+      px(ctx, x + 58, bottom - 52, 6, 28, "#5a4734");
     }
     return;
   }
 
-  roundedBackdrop(ctx, 52, top + 18, 200, 50, 6, "#486858");
+  px(ctx, 54, top + 18, 196, 64, "#284733");
+  px(ctx, 50, top + 14, 204, 6, "#74583d");
   ctx.fillStyle = "rgba(244,244,225,0.92)";
-  ctx.font = "11px 'Trebuchet MS', monospace";
+  ctx.font = "13px 'Trebuchet MS', monospace";
   ctx.textAlign = "left";
-  ctx.fillText("SCIENCE   MATH", 72, top + 40);
-  ctx.fillText("TEAM PRACTICE", 72, top + 58);
+  ctx.fillText("SCIENCE  MATH", 74, top + 44);
+  ctx.fillText("TEAM PRACTICE", 74, top + 66);
   for (let i = 0; i < 5; i++) {
     const lx = W - 188 + i * 31;
-    roundedBackdrop(
-      ctx,
-      lx,
-      wallBottom - 55,
-      24,
-      49,
-      4,
-      i % 2 ? "#718da4" : "#648298"
-    );
-    px(ctx, lx + 8, wallBottom - 28, 8, 3, "#dbe8ff");
+    px(ctx, lx, top + 24, 24, 78, i % 2 ? "#4d7eb2" : "#3f6fa5");
+    px(ctx, lx + 8, top + 58, 8, 3, "#dbe8ff");
+  }
+  for (let x = 74; x < W - 92; x += 116) {
+    px(ctx, x, bottom - 70, 68, 18, "#9a744c");
+    px(ctx, x + 9, bottom - 52, 6, 28, "#6a4b32");
+    px(ctx, x + 54, bottom - 52, 6, 28, "#6a4b32");
   }
 }
 
@@ -4302,94 +4107,46 @@ function drawSchoolOutdoorArea(ctx: CanvasRenderingContext2D, W: number, top: nu
   ctx.ellipse(W - 152, courtY + courtH / 2, 38, 22, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
-  const rearBase = Math.min(bottom - 16, top + 108);
-  px(ctx, W - 70, rearBase - 42, 8, 42, "#4e5d69");
-  px(ctx, W - 86, rearBase - 44, 32, 4, "#4e5d69");
-  drawPixelTree(ctx, 24, rearBase, 0.52, campus ? 9 : 8);
-  drawPixelTree(ctx, W - 20, rearBase, 0.46, campus ? 11 : 10);
-  px(ctx, 38, rearBase - 34, 214, 34, campus ? "#cdbb83" : "#b86e65");
-  for (let x = 48; x < 244; x += 38) {
-    px(ctx, x, rearBase - 24, 22, 4, "rgba(255,255,255,0.52)");
-  }
+  px(ctx, W - 70, courtY + 20, 8, 42, "#4e5d69");
+  px(ctx, W - 86, courtY + 18, 32, 4, "#4e5d69");
+  drawPixelTree(ctx, 34, horizon + 48, 0.58, campus ? 9 : 8);
+  drawPixelTree(ctx, W - 28, horizon + 52, 0.5, campus ? 11 : 10);
+  px(ctx, 38, bottom - 62, 214, 34, campus ? "#d8c078" : "#c35f5f");
+  for (let x = 48; x < 244; x += 38) px(ctx, x, bottom - 52, 22, 4, "rgba(255,255,255,0.58)");
 }
 
 function drawOfficeIndoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number): void {
-  const wallBottom = Math.round(
-    top + Math.min(102, Math.max(74, (bottom - top) * 0.29))
-  );
+  const wallBottom = Math.round(top + Math.min(136, Math.max(96, (bottom - top) * 0.34)));
   const wall = ctx.createLinearGradient(0, top, 0, wallBottom);
-  wall.addColorStop(0, "#d7e7df");
-  wall.addColorStop(1, "#a9c9bd");
+  wall.addColorStop(0, "#a5dfcf");
+  wall.addColorStop(1, "#69b896");
   ctx.fillStyle = wall;
   ctx.fillRect(0, top, W, wallBottom - top);
-  px(ctx, 0, top + 14, W, 5, "rgba(255,255,255,0.34)");
+  drawPixelTrim(ctx, 0, top + 16, W, 8, "#c4eee0", "#61ad91");
   const floor = ctx.createLinearGradient(0, wallBottom, 0, bottom);
-  floor.addColorStop(0, "#b9d0d2");
-  floor.addColorStop(1, "#8eafb1");
+  floor.addColorStop(0, "#9fc9d8");
+  floor.addColorStop(1, "#6da5bd");
   ctx.fillStyle = floor;
   ctx.fillRect(0, wallBottom, W, bottom - wallBottom);
-  px(ctx, 0, wallBottom - 4, W, 4, "#8b8175");
-  px(ctx, 0, wallBottom, W, 3, "rgba(255,255,255,0.32)");
-  ctx.save();
-  ctx.globalAlpha = 0.11;
-  for (let row = 0, y = wallBottom + 26; y < bottom; row++, y += 50) {
-    for (let x = 18 + (row % 2) * 43; x < W; x += 118) {
-      px(ctx, x, y, 17, 2, "#fff8e8");
-      px(ctx, x + 48, y + 18, 10, 2, "#557579");
-    }
-  }
-  ctx.restore();
+  for (let x = 0; x < W; x += 40) px(ctx, x, wallBottom, 2, bottom - wallBottom, "rgba(255,255,255,0.18)");
 
-  drawCurtainedWindow(ctx, 44, top + 18, 148, 55, "#cce5e8", "#7b9992");
-  for (let i = 0; i < 7; i++) {
-    px(
-      ctx,
-      54 + i * 19,
-      top + 65 - (i % 4) * 8,
-      13,
-      7 + (i % 4) * 8,
-      "#647c86"
-    );
-  }
-  roundedBackdrop(ctx, W - 164, top + 22, 88, 44, 6, "#46686c");
-  ctx.fillStyle = "#e6f0e9";
-  ctx.font = "11px 'Trebuchet MS', sans-serif";
+  window2(ctx, 44, top + 20, 148, 68, "#9ed8ff");
+  for (let i = 0; i < 7; i++) px(ctx, 54 + i * 19, top + 75 - (i % 4) * 10, 13, 11 + (i % 4) * 10, "#46647c");
+  px(ctx, W - 164, top + 22, 88, 44, "#315b66");
+  ctx.fillStyle = "#dff6f2";
+  ctx.font = "12px 'Trebuchet MS', sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("TEAM", W - 120, top + 42);
   ctx.fillText("GOALS", W - 120, top + 58);
 
   for (let i = 0; i < 3; i++) {
     const deskX = 76 + i * 168;
-    roundedBackdrop(
-      ctx,
-      deskX,
-      wallBottom - 24,
-      112,
-      21,
-      5,
-      "#a27c62"
-    );
-    roundedBackdrop(
-      ctx,
-      deskX + 34,
-      wallBottom - 47,
-      44,
-      25,
-      4,
-      "#46565b"
-    );
-    px(ctx, deskX + 39, wallBottom - 42, 34, 15, "#8ec4c5");
+    px(ctx, deskX, bottom - 88, 112, 24, "#8b6a4a");
+    px(ctx, deskX + 30, bottom - 118, 46, 30, "#232635");
+    px(ctx, deskX + 35, bottom - 113, 36, 20, "#6cd7ff");
+    px(ctx, deskX + 16, bottom - 64, 8, 36, "#624a35");
+    px(ctx, deskX + 88, bottom - 64, 8, 36, "#624a35");
   }
-
-  drawFlatRug(
-    ctx,
-    W * 0.52,
-    wallBottom + (bottom - wallBottom) * 0.6,
-    Math.min(178, W * 0.24),
-    Math.min(34, (bottom - wallBottom) * 0.085),
-    "#6f8f8e",
-    "#a9c1bb"
-  );
 }
 
 function drawOfficeOutdoorArea(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, t: number): void {
@@ -4422,392 +4179,92 @@ function drawOfficeOutdoorArea(ctx: CanvasRenderingContext2D, W: number, top: nu
   ctx.fillStyle = plaza;
   ctx.fillRect(0, horizon, W, bottom - horizon);
   px(ctx, 0, Math.round(horizon + (bottom - horizon) * 0.42), W, 5, "#e8d59b");
-  const rearBase = Math.min(bottom - 18, top + 108);
-  drawPixelTree(ctx, 24, rearBase, 0.58, 2);
-  drawPixelTree(ctx, W - 20, rearBase, 0.52, 3);
-  drawFlowerPatch(ctx, 72, rearBase - 16, 5);
-  px(ctx, W - 178, rearBase - 54, 116, 54, "#f6f0da");
-  px(ctx, W - 178, rearBase - 64, 116, 12, "#75b3bd");
+  for (let x = 44; x < W; x += 116) {
+    drawPixelTree(ctx, x + 4, horizon + 62, 0.68, x);
+  }
+  drawFlowerPatch(ctx, 72, horizon + 112, 5);
+  px(ctx, W - 178, bottom - 98, 116, 54, "#f6f0da");
+  px(ctx, W - 178, bottom - 108, 116, 12, "#37a5c7");
   ctx.fillStyle = "#37515c";
   ctx.font = "12px 'Trebuchet MS', sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("COFFEE", W - 120, rearBase - 32);
-  px(ctx, W - 74, rearBase - 10, 28, 10, "#4d4544");
-}
-
-function roundedBackdrop(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-  fill: string,
-  stroke = "rgba(98,77,67,0.42)"
-): void {
-  ctx.save();
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
-  else ctx.rect(x, y, w, h);
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawFlatRug(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  outer: string,
-  inner: string
-): void {
-  ellipse(ctx, cx + 2, cy + 3, rx + 3, ry + 3, "rgba(72,52,43,0.10)");
-  ellipse(ctx, cx, cy, rx, ry, outer);
-  ellipse(ctx, cx, cy - 1, rx * 0.78, ry * 0.64, inner);
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  for (let x = cx - rx * 0.68; x <= cx + rx * 0.68; x += 30) {
-    ellipse(ctx, x, cy, 5, 2, "#fff8e8");
-  }
-  ctx.restore();
-}
-
-function drawFamilyFloorTexture(
-  ctx: CanvasRenderingContext2D,
-  scene: SceneKind,
-  floor: string,
-  W: number,
-  floorTop: number,
-  H: number
-): void {
-  const floorG = ctx.createLinearGradient(0, floorTop, 0, H);
-  floorG.addColorStop(0, tint(floor, 10));
-  floorG.addColorStop(1, shade(floor, 6));
-  ctx.fillStyle = floorG;
-  ctx.fillRect(0, floorTop, W, H - floorTop);
-
-  // Sparse, non-directional flecks add material without suggesting perspective.
-  ctx.save();
-  ctx.globalAlpha = 0.12;
-  for (let row = 0, y = floorTop + 28; y < H; row++, y += 48) {
-    for (let x = 18 + (row % 2) * 37; x < W; x += 112) {
-      px(ctx, x, y, 18, 2, "#fff9eb");
-      px(ctx, x + 42, y + 19, 10, 2, shade(floor, 18));
-    }
-  }
-  ctx.restore();
-
-  const floorSpan = H - floorTop;
-  const rugY = floorTop + floorSpan * 0.54;
-  const rugRx = Math.min(190, W * 0.29);
-  const rugRy = Math.min(48, floorSpan * 0.105);
-  const rugs: Record<SceneKind, readonly [string, string]> = {
-    nursery: ["#e7b9b5", "#f8dfcf"],
-    playroom: ["#dfad67", "#f5d28b"],
-    school: ["#7797a6", "#a9c5cb"],
-    campus: ["#8b7a9e", "#b5a8c4"],
-    office: ["#718f8c", "#a8c2ba"],
-    home: ["#c6816d", "#e3b7a3"],
-    sunset: ["#8e7895", "#c5a9b7"],
-  };
-  const [outer, inner] = rugs[scene];
-  drawFlatRug(ctx, W * 0.53, rugY, rugRx, rugRy, outer, inner);
-}
-
-function drawCurtainedWindow(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  sky: string,
-  curtain: string
-): void {
-  roundedBackdrop(ctx, x - 4, y - 3, w + 8, h + 6, 6, "#f5e4cd");
-  window2(ctx, x, y, w, h, sky);
-  ctx.fillStyle = curtain;
-  ctx.beginPath();
-  ctx.moveTo(x - 1, y - 1);
-  ctx.quadraticCurveTo(x + 10, y + h * 0.42, x + 5, y + h + 2);
-  ctx.lineTo(x - 7, y + h + 2);
-  ctx.lineTo(x - 7, y - 1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(x + w + 1, y - 1);
-  ctx.quadraticCurveTo(
-    x + w - 10,
-    y + h * 0.42,
-    x + w - 5,
-    y + h + 2
-  );
-  ctx.lineTo(x + w + 7, y + h + 2);
-  ctx.lineTo(x + w + 7, y - 1);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawBunting(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  colors: readonly string[]
-): void {
-  ctx.save();
-  ctx.strokeStyle = "rgba(98,77,67,0.45)";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.quadraticCurveTo(x + w / 2, y + 8, x + w, y);
-  ctx.stroke();
-  const pieces = Math.max(3, Math.floor(w / 26));
-  for (let i = 0; i < pieces; i++) {
-    const px0 = x + 10 + i * ((w - 20) / Math.max(1, pieces - 1));
-    const py0 = y + 2 + Math.sin((i / Math.max(1, pieces - 1)) * Math.PI) * 4;
-    ctx.fillStyle = colors[i % colors.length];
-    ctx.beginPath();
-    ctx.moveTo(px0 - 5, py0);
-    ctx.lineTo(px0 + 5, py0);
-    ctx.lineTo(px0, py0 + 9);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawNurseryWallMotifs(
-  ctx: CanvasRenderingContext2D,
-  W: number,
-  top: number
-): void {
-  ctx.save();
-  ctx.globalAlpha = 0.48;
-  for (let x = 158, i = 0; x < W - 196; x += 76, i++) {
-    const y = top + 10 + (i % 2) * 10;
-    if (i % 3 === 0) {
-      ellipse(ctx, x, y, 9, 4, "#fff8e8");
-      ellipse(ctx, x + 8, y + 2, 10, 4, "#fff8e8");
-    } else {
-      ctx.fillStyle = i % 2 ? "#d97b75" : "#9cbfb7";
-      ctx.beginPath();
-      for (let p = 0; p < 10; p++) {
-        const angle = -Math.PI / 2 + p * Math.PI / 5;
-        const radius = p % 2 === 0 ? 5 : 2.2;
-        const sx = x + Math.cos(angle) * radius;
-        const sy = y + Math.sin(angle) * radius;
-        if (p === 0) ctx.moveTo(sx, sy);
-        else ctx.lineTo(sx, sy);
-      }
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-  ctx.restore();
+  ctx.fillText("COFFEE", W - 120, bottom - 76);
+  px(ctx, W - 74, bottom - 44, 28, 10, "#35323a");
 }
 
 function drawFamilyArea(ctx: CanvasRenderingContext2D, scene: SceneKind, theme: RoomTheme, W: number, top: number, H: number, t: number): void {
-  const wallBottom = familyFloorY(top);
-  const surfaces: Record<
-    SceneKind,
-    { wall: string; floor: string }
-  > = {
-    nursery: { wall: "#f4d9d5", floor: "#dce9e2" },
-    playroom: { wall: "#f1dfbd", floor: "#e8cf96" },
-    school: { wall: "#d6e5e5", floor: "#c89978" },
-    campus: { wall: "#ddd9c9", floor: "#c5b58c" },
-    office: { wall: "#d2e2da", floor: "#9fbfc0" },
-    home: { wall: "#efe0cf", floor: "#c68d82" },
-    sunset: { wall: "#e9b194", floor: "#b78d91" },
-  };
-  const { wall, floor } = surfaces[scene];
+  const wallBottom = top + 74;
+  const wall = scene === "sunset" ? "#f2b082" : tint(theme.wall, 10);
+  const floor = scene === "sunset" ? "#b48763" : theme.floor;
   const wallG = ctx.createLinearGradient(0, top, 0, wallBottom);
-  wallG.addColorStop(0, tint(wall, 15));
+  wallG.addColorStop(0, tint(wall, 10));
   wallG.addColorStop(1, wall);
   ctx.fillStyle = wallG;
   ctx.fillRect(0, top, W, wallBottom - top);
-  drawFamilyFloorTexture(ctx, scene, floor, W, wallBottom, H);
-  px(ctx, 0, wallBottom - 5, W, 5, shade(wall, 16));
-  px(ctx, 0, wallBottom, W, 4, shade(floor, 14));
-  px(ctx, 0, wallBottom, W, 1.5, tint(floor, 24));
+  drawPixelTrim(ctx, 0, top + 14, W, 8, tint(wall, 26), shade(wall, 10));
+  const floorG = ctx.createLinearGradient(0, wallBottom, 0, H);
+  floorG.addColorStop(0, tint(floor, 8));
+  floorG.addColorStop(1, shade(floor, 14));
+  ctx.fillStyle = floorG;
+  ctx.fillRect(0, wallBottom, W, H - wallBottom);
+  ctx.fillStyle = shade(floor, 20);
+  for (let x = 0; x < W; x += 42) ctx.fillRect(x, wallBottom, 2, H - wallBottom);
+  px(ctx, 0, wallBottom, W, 3, shade(floor, 22));
 
   switch (scene) {
     case "nursery": {
-      drawNurseryWallMotifs(ctx, W, top);
-      drawCurtainedWindow(
-        ctx,
-        45,
-        top + 5,
-        70,
-        22,
-        "#d9f1f4",
-        "#d97b75"
-      );
-      drawBunting(
-        ctx,
-        142,
-        top + 4,
-        Math.max(120, W - 356),
-        ["#d97b75", "#d6ad61", "#8eafa7"]
-      );
-
-      const cribX = W - 174;
-      const cribY = wallBottom - 29;
-      roundedBackdrop(ctx, cribX, cribY, 116, 26, 7, "#c99572");
-      px(ctx, cribX + 5, cribY + 5, 106, 6, "#f6dfc4");
-      for (let i = 0; i < 6; i++) {
-        px(ctx, cribX + 10 + i * 18, cribY + 9, 4, 14, "#ecd1b1");
-      }
-      px(ctx, cribX + 4, wallBottom - 5, 108, 5, "#a87255");
-
-      roundedBackdrop(
-        ctx,
-        174,
-        wallBottom - 20,
-        72,
-        17,
-        7,
-        "#9ec6c1"
-      );
-      ellipse(ctx, 210, wallBottom - 22, 22, 8, "#fff2d5");
-      px(ctx, 207, top + 4, 3, 7, "#9b7e72");
-      ellipse(ctx, 201, top + 14, 6, 4, "#d97b75");
-      ellipse(ctx, 216, top + 16, 6, 4, "#8eafa7");
+      window2(ctx, 58, top + 18, 72, 44, "#bfe6ff");
+      px(ctx, W - 164, wallBottom - 48, 96, 36, "#b58a62");
+      for (let i = 0; i < 4; i++) px(ctx, W - 154 + i * 21, wallBottom - 41, 12, 26, "#d2a47c");
+      px(ctx, 210, wallBottom - 22, 58, 18, "#9ad0ff");
+      px(ctx, 222, wallBottom - 46, 34, 30, "#fff2c6");
       break;
     }
     case "playroom": {
-      drawCurtainedWindow(ctx, 45, top + 5, 70, 22, "#d8f0f3", "#e47965");
-      drawBunting(ctx, 142, top + 4, Math.max(130, W - 350), [
-        "#e47965",
-        "#d7b95f",
-        "#88aaa7",
-        "#a68bb2",
-      ]);
-      roundedBackdrop(
-        ctx,
-        W - 184,
-        wallBottom - 29,
-        132,
-        26,
-        7,
-        "#8f78ad"
-      );
-      for (let i = 0; i < 8; i++) {
-        roundedBackdrop(
-          ctx,
-          W - 174 + i * 15,
-          wallBottom - 24 + (i % 2) * 10,
-          11,
-          9,
-          2,
-          ["#e5bd59", "#e98b9c", "#8db7c1", "#9fbd83"][i % 4],
-          "rgba(98,77,67,0.25)"
-        );
-      }
-      ellipse(ctx, 10 + Math.sin(t * 2) * 2, wallBottom + 8, 12, 12, "#df7567");
+      window2(ctx, 58, top + 18, 72, 44, "#bfe6ff");
+      px(ctx, W - 178, wallBottom - 50, 126, 42, "#8a6ad6");
+      for (let i = 0; i < 8; i++) px(ctx, W - 168 + i * 14, wallBottom - 42 + (i % 2) * 14, 10, 10, ["#ffd23f", "#ff8fd0", "#7fd0ff", "#9be36b"][i % 4]);
+      ellipse(ctx, 170 + Math.sin(t * 2) * 4, wallBottom - 8, 11, 11, "#ff6b6b");
       break;
     }
     case "school": {
-      roundedBackdrop(ctx, 54, top + 4, 198, 26, 4, "#486858");
+      px(ctx, 56, top + 14, 190, 54, "#26402f");
+      px(ctx, 52, top + 10, 198, 5, "#6a5a3a");
       ctx.fillStyle = "rgba(235,235,220,0.9)";
-      ctx.font = "9px 'Trebuchet MS', monospace";
+      ctx.font = "12px 'Trebuchet MS', monospace";
       ctx.textAlign = "left";
-      ctx.fillText("A B C   1 2 3   2 + 2 = 4", 69, top + 20);
-      for (let i = 0; i < 5; i++) {
-        roundedBackdrop(
-          ctx,
-          W - 220 + i * 38,
-          wallBottom - 24,
-          30,
-          20,
-          4,
-          i % 2 ? "#6f89a0" : "#829bad"
-        );
-      }
+      ctx.fillText("A B C  1 2 3", 74, top + 36);
+      ctx.fillText("2 + 2 = 4", 74, top + 56);
+      for (let i = 0; i < 4; i++) px(ctx, 92 + i * 92, wallBottom - 18, 54, 14, "#9a7a4a");
       break;
     }
     case "campus": {
-      drawCurtainedWindow(ctx, 48, top + 4, 102, 24, "#d8ecee", "#7f927a");
-      roundedBackdrop(ctx, W - 184, top + 4, 122, 23, 5, "#786489");
+      window2(ctx, 54, top + 14, 116, 54, "#a9d4ff");
+      px(ctx, W - 178, top + 16, 116, 24, "#7a3f9e");
       ctx.fillStyle = "#ffe9a8";
-      ctx.font = "10px 'Trebuchet MS', sans-serif";
+      ctx.font = "12px 'Trebuchet MS', sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("UNIVERSITY", W - 123, top + 16);
-      for (let i = 0; i < 8; i++) {
-        px(
-          ctx,
-          W - 170 + i * 13,
-          wallBottom - 18 + (i % 2) * 7,
-          9,
-          14,
-          ["#bd6f72", "#6f99a1", "#91a779", "#d0ad61"][i % 4]
-        );
-      }
+      ctx.fillText("UNIVERSITY", W - 120, top + 34);
+      for (let i = 0; i < 8; i++) px(ctx, W - 170 + i * 13, wallBottom - 44 + (i % 2) * 18, 10, 34, ["#ff6b6b", "#6bd0ff", "#9be36b", "#ffd23f"][i % 4]);
       break;
     }
     case "office": {
-      drawCurtainedWindow(ctx, 48, top + 4, 136, 24, "#cce5e8", "#7b9992");
-      for (let i = 0; i < 6; i++) {
-        px(
-          ctx,
-          60 + i * 20,
-          top + 22 - (i % 3) * 4,
-          14,
-          6 + (i % 3) * 4,
-          "#71858c"
-        );
-      }
+      window2(ctx, 54, top + 13, 140, 56, "#8fb8e6");
+      for (let i = 0; i < 6; i++) px(ctx, 62 + i * 22, top + 63 - (i % 3) * 12, 16, 12 + (i % 3) * 12, "#41506a");
       for (let i = 0; i < 3; i++) {
         const deskX = W - 240 + i * 74;
-        roundedBackdrop(
-          ctx,
-          deskX,
-          wallBottom - 18,
-          58,
-          15,
-          4,
-          "#a97f61"
-        );
-        roundedBackdrop(
-          ctx,
-          deskX + 15,
-          wallBottom - 29,
-          28,
-          15,
-          3,
-          "#485f64"
-        );
-        px(ctx, deskX + 19, wallBottom - 26, 20, 9, "#9ed6d5");
+        px(ctx, deskX, wallBottom - 24, 58, 18, "#8b6a4a");
+        px(ctx, deskX + 15, wallBottom - 44, 28, 18, "#222");
+        px(ctx, deskX + 18, wallBottom - 41, 22, 12, "#5fd0ff");
       }
       break;
     }
     case "home": {
-      drawCurtainedWindow(ctx, 48, top + 4, 86, 24, "#d8edef", "#c6816d");
-      roundedBackdrop(
-        ctx,
-        W - 224,
-        wallBottom - 27,
-        142,
-        24,
-        8,
-        "#a66f68"
-      );
-      roundedBackdrop(
-        ctx,
-        W - 214,
-        wallBottom - 31,
-        122,
-        13,
-        7,
-        "#c68178"
-      );
-      roundedBackdrop(ctx, 168, top + 5, 64, 22, 4, "#6f625d");
-      px(ctx, 173, top + 10, 54, 12, "#8eb0ad");
+      window2(ctx, 60, top + 15, 90, 52, "#bfe0ff");
+      px(ctx, W - 218, wallBottom - 34, 132, 26, "#9a5a6a");
+      px(ctx, W - 218, wallBottom - 46, 132, 14, "#b06a7a");
+      px(ctx, 100, top + 30, 72, 36, "#1c1c24");
+      px(ctx, 104, top + 34, 64, 28, "#3a4a6a");
       break;
     }
     case "sunset": {
@@ -4817,19 +4274,8 @@ function drawFamilyArea(ctx: CanvasRenderingContext2D, scene: SceneKind, theme: 
       sky.addColorStop(1, "#c46a8e");
       ctx.fillStyle = sky;
       ctx.fillRect(0, top, W, wallBottom - top);
-      ellipse(ctx, 130, top + 18, 13, 13, "#ffe9b0");
-      px(ctx, 0, wallBottom - 8, W, 8, "#7e665c");
-      for (let x = 24; x < W; x += 86) {
-        roundedBackdrop(
-          ctx,
-          x,
-          wallBottom - 19,
-          40,
-          16,
-          5,
-          "#806b5f"
-        );
-      }
+      ellipse(ctx, 130, top + 45, 16, 16, "#ffe9b0");
+      for (let x = 24; x < W; x += 86) px(ctx, x, wallBottom - 28, 40, 28, "#6b5a4b");
       break;
     }
   }
@@ -4928,48 +4374,32 @@ function drawScene(ctx: CanvasRenderingContext2D, scene: SceneKind, theme: RoomT
 }
 
 function drawHomeQuality(ctx: CanvasRenderingContext2D, theme: RoomTheme, W: number, floorY: number, q: number): void {
-  const zoneTop = floorY - 70;
-  const rearGroundY = familyFloorY(zoneTop);
   if (q === 1) {
-    for (const [x, y] of [
-      [210, zoneTop + 6],
-      [W - 230, zoneTop + 13],
-      [320, zoneTop + 9],
-    ] as const) {
-      const c = "rgba(85,63,56,0.25)";
-      px(ctx, x, y, 2, 5, c);
-      px(ctx, x + 2, y + 4, 2, 5, c);
-      px(ctx, x - 2, y + 8, 2, 5, c);
+    for (const [x, y] of [[210, 40], [W - 230, 60], [320, 90]] as const) {
+      const c = "rgba(0,0,0,0.30)";
+      px(ctx, x, y, 2, 10, c); px(ctx, x + 2, y + 8, 2, 8, c); px(ctx, x - 2, y + 14, 2, 9, c); px(ctx, x + 3, y + 20, 2, 8, c);
     }
     return;
   }
   const paintings = Math.min(q, 4);
   for (let i = 0; i < paintings; i++) {
     const fx = 220 + i * 48;
-    roundedBackdrop(
-      ctx,
-      fx,
-      zoneTop + 5,
-      34,
-      21,
-      4,
-      "#7d6658"
-    );
-    px(ctx, fx + 4, zoneTop + 9, 26, 13, tint(theme.accent, 12));
-    px(ctx, fx + 4, zoneTop + 17, 26, 5, shade(theme.accent, 16));
+    px(ctx, fx, 30, 34, 28, "#5a4632");
+    px(ctx, fx + 4, 34, 26, 20, theme.accent);
+    px(ctx, fx + 4, 45, 26, 9, shade(theme.accent, 26));
   }
-  if (q >= 3) drawPlant(ctx, 24, rearGroundY);
+  if (q >= 3) drawPlant(ctx, 24, floorY);
   if (q >= 4) {
-    px(ctx, 0, zoneTop, W, 3, "#d8b66d");
-    drawPlant(ctx, W - 40, rearGroundY);
+    px(ctx, 0, 0, W, 5, "#ffd76b");
+    drawPlant(ctx, W - 40, floorY);
   }
   if (q >= 5) {
     // luxury villa: a second gold band and a little hanging chandelier
-    px(ctx, 0, zoneTop + 4, W, 2, "#f1d897");
+    px(ctx, 0, 6, W, 2, "#ffe9a8");
     const cx = W * 0.5;
-    px(ctx, cx - 1, zoneTop + 2, 2, 10, "#b99453");
-    ellipse(ctx, cx, zoneTop + 14, 10, 5, "#e8c76f");
-    ellipse(ctx, cx, zoneTop + 14, 6, 3, "#fff0bd");
+    px(ctx, cx - 1, 8, 2, 12, "#caa44a");
+    ellipse(ctx, cx, 22, 12, 6, "#ffe27a");
+    ellipse(ctx, cx, 22, 7, 4, "#fff4c2");
   }
 }
 
