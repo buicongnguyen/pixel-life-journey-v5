@@ -101,5 +101,20 @@ Implementation and local validation are complete:
   stationary seated poses, idle newborn seating, four-direction crawling, and
   no console warnings or errors.
 
-Commit, push, GitHub Pages run, live URLs, and immutable commit identifiers
-will be recorded below after release.
+## Published release
+
+- Released: 2026-07-26
+- Feature commit:
+  `76cdbe58bf32ca33dd34943ab4f9f26763e9c608`
+- Successful GitHub Pages run:
+  <https://github.com/buicongnguyen/pixel-life-journey-v5/actions/runs/30188068537>
+- Live game:
+  <https://buicongnguyen.github.io/pixel-life-journey-v5/>
+- Live animated newborn review:
+  <https://buicongnguyen.github.io/pixel-life-journey-v5/avatar-preview.html?motion&stage=0>
+- Live elder prop review:
+  <https://buicongnguyen.github.io/pixel-life-journey-v5/avatar-preview.html?motion&stage=11>
+- Browser verification: public game and preview loaded successfully with no
+  warnings or errors.
+- Version 4 was intentionally left unchanged at
+  `beaf362db5ef296e8d9c0faa0b209555e0691bc8`.
